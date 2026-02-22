@@ -11,7 +11,6 @@ export async function GET(request: Request) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("[/api/load] error:", error);
-    console.error("[/api/load] error:", error);
     return NextResponse.json({ error: "Failed to load data" }, { status: 500 });
   }
 }
