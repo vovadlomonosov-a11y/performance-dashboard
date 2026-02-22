@@ -1,0 +1,27 @@
+# Credentials & secrets
+.env
+.env.local
+credentials.json
+token.json
+client_secret*.json
+service_account.json
+artfact-storage*.json
+
+# Next.js
+.next/
+node_modules/
+out/
+
+# Intermediate files (always regenerated)
+.tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
