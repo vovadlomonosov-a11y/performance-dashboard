@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { JWT, OAuth2Client } from "google-auth-library";
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID!;
+const SPREADSHEET_ID = (process.env.SPREADSHEET_ID || "").trim();
 const SHEET_NAME = "SalesAssessments";
 
 const HEADERS = [
