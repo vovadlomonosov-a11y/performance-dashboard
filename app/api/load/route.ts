@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[/api/load] error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "Failed to load data", detail: msg }, { status: 500 });
+    const sid = process.env.SPREADSHEET_ID;
+    return NextResponse.json({ error: "Failed to load data", detail: msg, sid_len: sid?.length, sid_trimmed: sid?.trim() }, { status: 500 });
   }
 }
