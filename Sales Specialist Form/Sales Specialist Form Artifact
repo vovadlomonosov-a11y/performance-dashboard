@@ -1,0 +1,1528 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+const SECTIONS = [
+    {
+        id: "welcome",
+        title: "Welcome",
+        icon: "🏁",
+    },
+    {
+        id: "voice",
+        title: "Voice & Spoken English",
+        icon: "🎙️",
+        gate: true,
+    },
+    {
+        id: "written",
+        title: "Written Communication",
+        icon: "✍️",
+        weight: 20,
+    },
+    {
+        id: "sales",
+        title: "Sales Instinct",
+        icon: "💡",
+        weight: 25,
+    },
+    {
+        id: "objections",
+        title: "Objection Handling",
+        icon: "⚡",
+        weight: 25,
+        timed: true,
+    },
+    {
+        id: "crm",
+        title: "CRM & Tech Fluency",
+        icon: "🖥️",
+        weight: 10,
+    },
+    {
+        id: "timezone",
+        title: "Time Zone & Availability",
+        icon: "🕐",
+        weight: 10,
+    },
+    {
+        id: "culture",
+        title: "Culture & Coachability",
+        icon: "🤝",
+        weight: 10,
+    },
+    {
+        id: "complete",
+        title: "Assessment Complete",
+        icon: "✅",
+    },
+];
+
+const OBJECTION_TIME_LIMIT = 120;
+
+const CRM_OPTIONS = [
+    "GoHighLevel",
+    "HubSpot",
+    "Salesforce",
+    "Pipedrive",
+    "Monday.com",
+    "Zoho",
+    "Other CRM",
+    "None",
+];
+
+export default function SalesAssessment() {
+    const [currentSection, setCurrentSection] = useState(0);
+    const [candidateName, setCandidateName] = useState("");
+    const [candidateEmail, setCandidateEmail] = useState("");
+    const [responses, setResponses] = useState({});
+    const [objectionIndex, setObjectionIndex] = useState(0);
+    const [objectionTimer, setObjectionTimer] = useState(OBJECTION_TIME_LIMIT);
+    const [objectionActive, setObjectionActive] = useState(false);
+    const [objectionStarted, setObjectionStarted] = useState(false);
+    const [selectedCRMs, setSelectedCRMs] = useState([]);
+    const [startTime, setStartTime] = useState(null);
+    const [sectionStartTimes, setSectionStartTimes] = useState({});
+    const timerRef = useRef(null);
+    const topRef = useRef(null);
+
+    const objections = [
+        `"That's way more than I expected."`,
+        `"I need to talk to my wife about it."`,
+        `"Can you just email me the quote? I'll look at it later."`,
+        `"I found someone on Facebook who'll do it for half that price."`,
+        `"I'm not sure I really need ceramic coating. My car's already 3 years old."`,
+    ];
+
+    useEffect(() => {
+        if (objectionActive && objectionTimer > 0) {
+            timerRef.current = setInterval(() => {
+                setObjectionTimer((prev) => {
+                    if (prev <= 1) {
+                        clearInterval(timerRef.current);
+                        setObjectionActive(false);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+        return () => clearInterval(timerRef.current);
+    }, [objectionActive, objectionTimer]);
+
+    useEffect(() => {
+        if (currentSection === 0) {
+            setStartTime(Date.now());
+        }
+    }, []);
+
+    const scrollToTop = () => {
+        if (topRef.current) {
+            topRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    };
+
+    const updateResponse = (key, value) => {
+        setResponses((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const goNext = () => {
+        if (currentSection < SECTIONS.length - 1) {
+            const nextIdx = currentSection + 1;
+            setCurrentSection(nextIdx);
+            setSectionStartTimes((prev) => ({
+                ...prev,
+                [SECTIONS[nextIdx].id]: Date.now(),
+            }));
+            scrollToTop();
+        }
+    };
+
+    const goBack = () => {
+        if (currentSection > 0) {
+            setCurrentSection(currentSection - 1);
+            scrollToTop();
+        }
+    };
+
+    const startObjection = () => {
+        setObjectionStarted(true);
+        setObjectionActive(true);
+        setObjectionTimer(OBJECTION_TIME_LIMIT);
+    };
+
+    const submitObjection = () => {
+        clearInterval(timerRef.current);
+        setObjectionActive(false);
+        const timeUsed = OBJECTION_TIME_LIMIT - objectionTimer;
+        updateResponse(`objection_${objectionIndex}_time`, timeUsed);
+        if (objectionIndex < objections.length - 1) {
+            setObjectionIndex(objectionIndex + 1);
+            setObjectionTimer(OBJECTION_TIME_LIMIT);
+            setObjectionActive(true);
+            setObjectionStarted(true);
+        } else {
+            setObjectionStarted(false);
+        }
+    };
+
+    const toggleCRM = (crm) => {
+        setSelectedCRMs((prev) => {
+            const updated = prev.includes(crm)
+                ? prev.filter((c) => c !== crm)
+                : [...prev, crm];
+            updateResponse("crm_tools", updated.join(", "));
+            return updated;
+        });
+    };
+
+    const getProgress = () => {
+        return Math.round((currentSection / (SECTIONS.length - 1)) * 100);
+    };
+
+    const getTotalTime = () => {
+        if (!startTime) return "N/A";
+        const mins = Math.round((Date.now() - startTime) / 60000);
+        return `${mins} min`;
+    };
+
+    const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, "0")}`;
+    };
+
+    const canProceed = useCallback(() => {
+        const section = SECTIONS[currentSection];
+        switch (section.id) {
+            case "welcome":
+                return candidateName.trim().length > 0 && candidateEmail.trim().length > 0;
+            case "voice":
+                return (
+                    responses.voice_1?.trim()?.length > 0 &&
+                    responses.voice_2?.trim()?.length > 0 &&
+                    responses.voice_3?.trim()?.length > 0
+                );
+            case "written":
+                return (
+                    responses.written_text?.trim()?.length > 0 &&
+                    responses.written_email?.trim()?.length > 0 &&
+                    responses.written_casual?.trim()?.length > 0
+                );
+            case "sales":
+                return (
+                    responses.sales_cheap?.trim()?.length > 0 &&
+                    responses.sales_shopper?.trim()?.length > 0 &&
+                    responses.sales_ghost?.trim()?.length > 0
+                );
+            case "objections":
+                return objections.every(
+                    (_, i) => responses[`objection_${i}`]?.trim()?.length > 0
+                );
+            case "crm":
+                return (
+                    responses.crm_newlead?.trim()?.length > 0 &&
+                    responses.crm_reporting?.trim()?.length > 0 &&
+                    selectedCRMs.length > 0
+                );
+            case "timezone":
+                return (
+                    responses.tz_hours?.trim()?.length > 0 &&
+                    responses.tz_hotlead?.trim()?.length > 0 &&
+                    responses.tz_setup?.trim()?.length > 0
+                );
+            case "culture":
+                return (
+                    responses.culture_shop?.trim()?.length > 0 &&
+                    responses.culture_feedback?.trim()?.length > 0 &&
+                    responses.culture_why?.trim()?.length > 0
+                );
+            default:
+                return true;
+        }
+    }, [currentSection, candidateName, candidateEmail, responses, selectedCRMs, objections]);
+
+    const renderProgressBar = () => (
+        <div style= { styles.progressContainer } >
+        <div style={ styles.progressTrack }>
+            <div
+          style={ { ...styles.progressFill, width: `${getProgress()}%` } }
+        />
+        </div>
+        < div style = { styles.progressLabels } >
+            <span style={ styles.progressText }>
+                Section { currentSection } of { SECTIONS.length - 2 }
+    </span>
+        < span style = { styles.progressText } > { getProgress() } % </span>
+            </div>
+            </div>
+  );
+
+    const renderSectionNav = () => (
+        <div style= { styles.sectionNav } >
+        {
+            SECTIONS.filter((s) => s.id !== "welcome" && s.id !== "complete").map(
+                (section, idx) => {
+                    const realIdx = idx + 1;
+                    const isActive = currentSection === realIdx;
+                    const isComplete = currentSection > realIdx;
+                    return (
+                        <div
+              key= { section.id }
+                    style = {{
+                ...styles.sectionDot,
+                ...(isActive ? styles.sectionDotActive : {}),
+                ...(isComplete ? styles.sectionDotComplete : {}),
+              }
+}
+title = { section.title }
+    >
+    <span style={ styles.sectionDotIcon }>
+        { isComplete? "✓": section.icon }
+        </span>
+        < span
+style = {{
+                  ...styles.sectionDotLabel,
+                  ...(isActive ? { color: "#F5F0E8", fontWeight: 700 } : {}),
+                }}
+              >
+    { section.title }
+    </span>
+    </div>
+          );
+        }
+      )}
+</div>
+  );
+
+const TextArea = ({ id, placeholder, rows = 5 }) => (
+    <textarea
+      style= { styles.textarea }
+placeholder = { placeholder }
+rows = { rows }
+value = { responses[id] || "" }
+onChange = {(e) => updateResponse(id, e.target.value)}
+onFocus = {(e) => (e.target.style.borderColor = "#C8A862")}
+onBlur = {(e) => (e.target.style.borderColor = "#2A2A2A")}
+    />
+  );
+
+const ScenarioCard = ({ number, scenario, children }) => (
+    <div style= { styles.scenarioCard } >
+    <div style={ styles.scenarioHeader }>
+        <span style={ styles.scenarioNumber }> Scenario { number } </span>
+            </div>
+            < div style = { styles.scenarioPrompt } >
+                <p style={ styles.scenarioText }> { scenario } </p>
+                    </div>
+{ children }
+</div>
+  );
+
+const renderWelcome = () => (
+    <div style= { styles.welcomeContainer } >
+    <div style={ styles.welcomeBadge }> UPSTATE AUTO STYLING </div>
+        < h1 style = { styles.welcomeTitle } >
+            Customer Experience & Sales Specialist
+                </h1>
+                < h2 style = { styles.welcomeSubtitle } > Candidate Assessment </h2>
+                    < div style = { styles.welcomeDivider } />
+                        <div style={ styles.welcomeInfo }>
+                            <div style={ styles.welcomeInfoItem }>
+                                <span style={ styles.welcomeInfoIcon }>⏱️</span>
+                                    < div >
+                                    <strong style={ { color: "#F5F0E8" } }> 45 - 60 minutes </strong>
+                                        < p style = {{ margin: 0, color: "#8A8478", fontSize: 13 }}>
+                                            Take your time, but be concise
+                                                </p>
+                                                </div>
+                                                </div>
+                                                < div style = { styles.welcomeInfoItem } >
+                                                    <span style={ styles.welcomeInfoIcon }>📝</span>
+                                                        < div >
+                                                        <strong style={ { color: "#F5F0E8" } }> 7 Sections </strong>
+                                                            < p style = {{ margin: 0, color: "#8A8478", fontSize: 13 }}>
+                                                                Voice, writing, sales, objections, tech, availability, culture
+                                                                </p>
+                                                                </div>
+                                                                </div>
+                                                                < div style = { styles.welcomeInfoItem } >
+                                                                    <span style={ styles.welcomeInfoIcon }>⚡</span>
+                                                                        < div >
+                                                                        <strong style={ { color: "#F5F0E8" } }> One timed section </strong>
+                                                                            < p style = {{ margin: 0, color: "#8A8478", fontSize: 13 }}>
+                                                                                Objection handling — 2 minutes each, simulating real calls
+                                                                                    </p>
+                                                                                    </div>
+                                                                                    </div>
+                                                                                    </div>
+                                                                                    < div style = { styles.welcomeNote } >
+                                                                                        <p style={ { margin: 0, color: "#C8A862", fontWeight: 600, fontSize: 14 } }>
+                                                                                            Important
+                                                                                            </p>
+                                                                                            < p style = {{ margin: "6px 0 0 0", color: "#A09A8E", fontSize: 14, lineHeight: 1.6 }}>
+                                                                                                Write in your own words.We're looking for how YOU think, not perfect
+grammar.Be honest, be yourself, and show us how you sell.
+        </p>
+    </div>
+    < div style = { styles.inputGroup } >
+        <label style={ styles.inputLabel }> Your Full Name </label>
+            < input
+type = "text"
+style = { styles.input }
+placeholder = "Enter your full name"
+value = { candidateName }
+onChange = {(e) => setCandidateName(e.target.value)}
+onFocus = {(e) => (e.target.style.borderColor = "#C8A862")}
+onBlur = {(e) => (e.target.style.borderColor = "#2A2A2A")}
+        />
+    </div>
+    < div style = { styles.inputGroup } >
+        <label style={ styles.inputLabel }> Your Email </label>
+            < input
+type = "email"
+style = { styles.input }
+placeholder = "you@email.com"
+value = { candidateEmail }
+onChange = {(e) => setCandidateEmail(e.target.value)}
+onFocus = {(e) => (e.target.style.borderColor = "#C8A862")}
+onBlur = {(e) => (e.target.style.borderColor = "#2A2A2A")}
+        />
+    </div>
+    </div>
+  );
+
+const renderVoice = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <div style={ styles.gateTag }>⚠️ PASS / FAIL GATE </div>
+        < p style = { styles.sectionDescription } >
+            Record yourself responding to each scenario below.Use a voice memo app
+          or Loom.Upload the link or file name for each. < strong > No scripts.No
+          prep.Just talk like you're on a real call.</strong>
+    </p>
+    </div>
+    < ScenarioCard
+number = { 1}
+scenario = {`A customer calls and says: "Hey, I just bought a brand new BMW and I want to get it fully protected. What do y'all offer?" Record your response as if you're on the phone with them right now.`}
+      >
+    <TextArea
+          id="voice_1"
+placeholder = "Paste your Loom link, Google Drive link, or describe where you uploaded your recording..."
+rows = { 2}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`A customer says: "Honestly, $1,200 for a ceramic coating sounds like a lot. My buddy got his car done for $300 at some place off Craigslist." Record your spoken response.`}
+      >
+    <TextArea
+          id="voice_2"
+placeholder = "Paste your recording link..."
+rows = { 2}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 3}
+scenario = {`You're calling a lead who filled out a form 4 days ago and hasn't answered your last 2 calls. They finally pick up. Record what you say.`}
+      >
+    <TextArea
+          id="voice_3"
+placeholder = "Paste your recording link..."
+rows = { 2}
+    />
+    </ScenarioCard>
+    < div style = { styles.gradingNote } >
+        <p style={ { margin: 0, fontWeight: 600, color: "#C8A862" } }>
+            What we're listening for:
+                </p>
+                < p style = {{ margin: "6px 0 0", color: "#A09A8E", lineHeight: 1.6 }}>
+                    Natural English fluency • Warmth and confidence • Conversational tone
+                        (not scripted) • Ability to connect with American customers
+                            </p>
+                            </div>
+                            </div>
+  );
+
+const renderWritten = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <p style={ styles.sectionDescription }>
+        You'll be texting and emailing customers daily. We need to see that your
+          writing sounds natural, warm, and like a real person — not a template.
+        </p>
+    </div>
+    < ScenarioCard
+number = { 1}
+scenario = {`Write an SMS follow-up to a customer named Mike who got a quote for ceramic coating 3 days ago and hasn't responded. Keep it under 3 sentences.`}
+      >
+    <TextArea
+          id="written_text"
+placeholder = "Write your text message here..."
+rows = { 3}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`Write a short email to a customer named Sarah who just booked a $2,500 PPF job for next week. Confirm her appointment, make her feel excited, and let her know what to expect.`}
+      >
+    <TextArea
+          id="written_email"
+placeholder = "Write your email here (include subject line)..."
+rows = { 7}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 3}
+scenario = {`A customer texts you: "yo can u guys do my truck windows tomorrow?" Write your reply.`}
+      >
+    <TextArea
+          id="written_casual"
+placeholder = "Write your reply..."
+rows = { 3}
+    />
+    </ScenarioCard>
+    </div>
+  );
+
+const renderSales = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <p style={ styles.sectionDescription }>
+        These scenarios test whether you think like a salesperson.There are no
+"right" answers — we want to see how your brain works.
+        </p>
+    </div>
+    < ScenarioCard
+number = { 1}
+scenario = {`A customer calls and says: "I just need the basic tint, whatever's cheapest." You know your cheapest option is $250 but most customers are happiest with the $450 package. What do you say? Write it word for word.`}
+      >
+    <div style={ styles.scenarioLabel }> The Cheap Buyer </div>
+        < TextArea
+id = "sales_cheap"
+placeholder = "Write exactly what you'd say..."
+rows = { 5}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`A customer says: "I'm getting quotes from 3 different shops. Why should I go with you guys?" Write your response.`}
+      >
+    <div style={ styles.scenarioLabel }> The Shopper </div>
+        < TextArea
+id = "sales_shopper"
+placeholder = "Write your response..."
+rows = { 5}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 3}
+scenario = {`You've called a lead 3 times. Texted twice. Emailed once. No response. It's been 10 days. What's your next move? Be specific about what you'd do over the next 7 days.`}
+      >
+    <div style={ styles.scenarioLabel }> The Ghost </div>
+        < TextArea
+id = "sales_ghost"
+placeholder = "Walk us through your exact plan..."
+rows = { 6}
+    />
+    </ScenarioCard>
+    </div>
+  );
+
+const renderObjections = () => {
+    const allDone = objections.every(
+        (_, i) => responses[`objection_${i}`]?.trim()?.length > 0
+    );
+    const currentObjDone = responses[`objection_${objectionIndex}`]?.trim()?.length > 0;
+
+    return (
+        <div>
+        <div style= { styles.sectionIntro } >
+        <div style={ styles.timedTag }>⏱️ TIMED — 2 MINUTES EACH </div>
+            < p style = { styles.sectionDescription } >
+                You'll see 5 customer objections one at a time. You have 2 minutes to
+            write your response to each.This simulates real call pressure.
+            { !objectionStarted && !allDone && " Hit START when you're ready." }
+    </p>
+        </div>
+
+    {
+        !objectionStarted && !allDone && (
+            <div style={ { textAlign: "center", marginTop: 24 } }>
+                <button style={ styles.startButton } onClick = { startObjection } >
+                    START OBJECTION ROUND
+                        </button>
+                        </div>
+        )}
+
+{
+    (objectionStarted || allDone) && (
+        <div>
+        <div style={ styles.objectionTracker }>
+        {
+            objections.map((_, i) => (
+                <div
+                  key= { i }
+                  style = {{
+                ...styles.objectionDot,
+                background:
+                    responses[`objection_${i}`]?.trim()?.length > 0
+                        ? "#C8A862"
+                        : i === objectionIndex && objectionStarted
+                            ? "#1A1A1A"
+                            : "#1A1A1A",
+                borderColor:
+                    i === objectionIndex && objectionStarted
+                        ? "#C8A862"
+                        : responses[`objection_${i}`]?.trim()?.length > 0
+                            ? "#C8A862"
+                            : "#333",
+            }}
+            >
+        {
+            responses[`objection_${i}`]?.trim()?.length > 0
+                ? "✓"
+                : i + 1
+        }
+            </div>
+              ))
+}
+</div>
+
+{
+    objectionActive && (
+        <div style={ styles.timerBar }>
+            <div
+                  style={
+        {
+                    ...styles.timerFill,
+                width: `${(objectionTimer / OBJECTION_TIME_LIMIT) * 100}%`,
+                    background:
+            objectionTimer <= 30
+                ? "#E74C3C"
+                : objectionTimer <= 60
+                    ? "#F39C12"
+                    : "#C8A862",
+                  }
+    }
+                />
+        < span
+    style = {{
+                    ...styles.timerText,
+            color: objectionTimer <= 30 ? "#E74C3C" : "#C8A862",
+                  }
+}
+                >
+    { formatTime(objectionTimer) }
+    </span>
+    </div>
+            )}
+
+<ScenarioCard
+              number={ objectionIndex + 1 }
+scenario = {`Customer says: ${objections[objectionIndex]}`}
+            >
+    <TextArea
+                id={ `objection_${objectionIndex}` }
+placeholder = "Write your response — fast..."
+rows = { 5}
+    />
+    { objectionActive && (
+        <button
+                  style={
+    {
+                    ...styles.submitObjButton,
+            opacity: currentObjDone ? 1 : 0.4,
+                cursor: currentObjDone ? "pointer" : "not-allowed",
+                  }
+}
+onClick = { currentObjDone? submitObjection: undefined }
+    >
+{
+    objectionIndex<objections.length - 1
+        ? "SUBMIT & NEXT OBJECTION →"
+        : "SUBMIT FINAL OBJECTION"
+}
+    </button>
+              )}
+{
+    objectionTimer === 0 && !currentObjDone && (
+        <div style={ styles.timeUpNote }>
+                  ⏱️ Time's up! Write your best answer anyway and submit.
+        < button
+    style = {{
+                      ...styles.submitObjButton,
+            marginTop: 12,
+                opacity: responses[`objection_${objectionIndex}`]?.trim()?.length > 0 ? 1 : 0.4,
+                    }
+}
+onClick = {
+    responses[`objection_${objectionIndex}`]?.trim()?.length > 0
+        ? submitObjection
+        : undefined
+}
+    >
+    SUBMIT LATE RESPONSE →
+</button>
+    </div>
+              )}
+</ScenarioCard>
+    </div>
+        )}
+</div>
+    );
+  };
+
+const renderCRM = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <p style={ styles.sectionDescription }>
+        You'll be working in a CRM (customer relationship management system)
+          every day.We want to see if you think in systems and pipelines.
+        </p>
+    </div>
+    < ScenarioCard
+number = { 1}
+scenario = {`A new lead comes in at 9:00 AM from a website form. Walk me through exactly what you'd do in the CRM from the moment you see it to the moment it's either booked or marked as lost. Be step-by-step specific.`}
+      >
+    <TextArea
+          id="crm_newlead"
+placeholder = "Walk us through your exact process..."
+rows = { 6}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`It's Friday afternoon. Your manager asks: "How did this week go?" Using a CRM, what numbers would you pull to answer that question?`}
+      >
+    <TextArea
+          id="crm_reporting"
+placeholder = "What metrics would you report on?"
+rows = { 5}
+    />
+    </ScenarioCard>
+    < div style = { styles.scenarioCard } >
+        <div style={ styles.scenarioHeader }>
+            <span style={ styles.scenarioNumber }> Experience Check </span>
+                </div>
+                < p
+style = {{
+    color: "#A09A8E",
+        fontSize: 15,
+            lineHeight: 1.6,
+                margin: "0 0 16px",
+          }}
+        >
+    Which of these tools have you used ? Select all that apply.
+        </p>
+        < div style = { styles.crmGrid } >
+        {
+            CRM_OPTIONS.map((crm) => (
+                <button
+              key= { crm }
+              style = {{
+                ...styles.crmChip,
+                ...(selectedCRMs.includes(crm) ? styles.crmChipActive : {}),
+            }}
+onClick = {() => toggleCRM(crm)}
+            >
+    { selectedCRMs.includes(crm) ? "✓ " : "" }
+{ crm }
+</button>
+          ))}
+</div>
+    </div>
+    </div>
+  );
+
+const renderTimezone = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <p style={ styles.sectionDescription }>
+        Our business hours are < strong > 8: 30 AM - 5: 30 PM Eastern Time(US) </strong>.
+          We need to confirm you can work these hours consistently.
+        </p>
+    </div>
+    < ScenarioCard
+number = { 1}
+scenario = {`Our hours are 8:30 AM - 5:30 PM Eastern Time. What time is that in YOUR local time zone? Are you available to work these full hours consistently?`}
+      >
+    <TextArea
+          id="tz_hours"
+placeholder = "Tell us your time zone and confirm your availability..."
+rows = { 4}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`A hot lead calls at 4:45 PM Eastern on a Friday. You're supposed to be off in 15 minutes. What do you do?`}
+      >
+    <TextArea
+          id="tz_hotlead"
+placeholder = "What's your move?"
+rows = { 4}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 3}
+scenario = {`Describe your home office setup: internet speed, quiet environment, backup power, headset, second monitor, etc.`}
+      >
+    <TextArea
+          id="tz_setup"
+placeholder = "Tell us about your workspace..."
+rows = { 5}
+    />
+    </ScenarioCard>
+    </div>
+  );
+
+const renderCulture = () => (
+    <div>
+    <div style= { styles.sectionIntro } >
+    <p style={ styles.sectionDescription }>
+        Last section.This is about fit — are you someone who grows, takes
+feedback, and actually cares about the work ?
+    </p>
+    </div>
+    < ScenarioCard
+        number = { 1}
+scenario = {`Go to our Google reviews (search "Upstate Auto Styling Spartanburg"). Read a few. What stood out to you? What would you tell a customer about us based on what you saw?`}
+      >
+    <TextArea
+          id="culture_shop"
+placeholder = "Tell us what you found and what you'd say..."
+rows = { 5}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 2}
+scenario = {`Your manager listens to your call recordings and tells you: "You're talking too much and not asking enough questions." How do you respond?`}
+      >
+    <TextArea
+          id="culture_feedback"
+placeholder = "How do you handle this feedback?"
+rows = { 5}
+    />
+    </ScenarioCard>
+    < ScenarioCard
+number = { 3}
+scenario = {`Why Upstate Auto Styling? Why this job and not any other remote sales position?`}
+      >
+    <TextArea
+          id="culture_why"
+placeholder = "Tell us why you want THIS role..."
+rows = { 5}
+    />
+    </ScenarioCard>
+    </div>
+  );
+
+const renderComplete = () => (
+    <div style= { styles.completeContainer } >
+    <div style={ styles.completeIcon }>✅</div>
+        < h2 style = { styles.completeTitle } > Assessment Complete </h2>
+            < p style = { styles.completeSubtitle } >
+                Thanks, { candidateName }.Your responses have been recorded.
+      </p>
+                    < div style = { styles.completeSummary } >
+                        <div style={ styles.summaryRow }>
+                            <span style={ styles.summaryLabel }> Time Taken </span>
+                                < span style = { styles.summaryValue } > { getTotalTime() } </span>
+                                    </div>
+                                    < div style = { styles.summaryRow } >
+                                        <span style={ styles.summaryLabel }> Sections Completed </span>
+                                            < span style = { styles.summaryValue } > 7 / 7 </span>
+                                                </div>
+                                                < div style = { styles.summaryRow } >
+                                                    <span style={ styles.summaryLabel }> CRM Experience </span>
+                                                        < span style = { styles.summaryValue } >
+                                                            { selectedCRMs.length > 0 ? selectedCRMs.join(", ") : "None listed" }
+                                                            </span>
+                                                            </div>
+                                                            </div>
+                                                            < div style = { styles.completeNote } >
+                                                                <p style={ { margin: 0, color: "#C8A862", fontWeight: 600 } }>
+                                                                    What happens next ?
+                                                                        </p>
+                                                                        < p style = {{ margin: "8px 0 0", color: "#A09A8E", lineHeight: 1.6 }}>
+                                                                            Our team will review your assessment within 48 hours.If you move
+forward, we'll schedule a short phone screen. Keep an eye on your
+          email at < strong style = {{ color: "#F5F0E8" }}> { candidateEmail } </strong>.
+    </p>
+    </div>
+
+    < div style = { styles.reviewHeader } >
+        <h3 style={ { color: "#F5F0E8", margin: 0, fontSize: 18 } }>
+          📋 Response Review(Internal)
+    </h3>
+    < p style = {{ color: "#8A8478", margin: "4px 0 0", fontSize: 13 }}>
+        All responses from this candidate
+            </p>
+            </div>
+            < div style = { styles.reviewGrid } >
+            {
+                Object.entries(responses).map(([key, val]) => {
+                    if (!val || key.includes("_time")) return null;
+                    const label = key
+                        .replace(/_/g, " ")
+                        .replace(/^\w/, (c) => c.toUpperCase());
+                    return (
+                        <div key= { key } style = { styles.reviewItem } >
+                            <div style={ styles.reviewLabel }> { label } </div>
+                                < div style = { styles.reviewValue } > { val } </div>
+                                    </div>
+          );
+            })}
+</div>
+    </div>
+  );
+
+const renderSection = () => {
+    switch (SECTIONS[currentSection].id) {
+        case "welcome": return renderWelcome();
+        case "voice": return renderVoice();
+        case "written": return renderWritten();
+        case "sales": return renderSales();
+        case "objections": return renderObjections();
+        case "crm": return renderCRM();
+        case "timezone": return renderTimezone();
+        case "culture": return renderCulture();
+        case "complete": return renderComplete();
+        default: return null;
+    }
+};
+
+const section = SECTIONS[currentSection];
+const isWelcome = section.id === "welcome";
+const isComplete = section.id === "complete";
+
+return (
+    <div style= { styles.root } >
+    <div ref={ topRef } />
+        < div style = { styles.container } >
+            {/* Header */ }
+            < div style = { styles.header } >
+                <div style={ styles.headerLeft }>
+                    <div style={ styles.logo }> UAS </div>
+                        < div >
+                        <div style={ styles.companyName }> Upstate Auto Styling </div>
+                            < div style = { styles.assessmentLabel } > Sales Assessment </div>
+                                </div>
+                                </div>
+{
+    !isWelcome && !isComplete && (
+        <div style={ styles.headerRight }>
+            <span style={ styles.timerBadge }>⏱ { getTotalTime() } </span>
+                </div>
+          )
+}
+</div>
+
+{/* Progress */ }
+{ !isWelcome && !isComplete && renderProgressBar() }
+{ !isWelcome && !isComplete && renderSectionNav() }
+
+{/* Section Title */ }
+{
+    !isWelcome && !isComplete && (
+        <div style={ styles.sectionTitleContainer }>
+            <span style={ styles.sectionIcon }> { section.icon } </span>
+                < h2 style = { styles.sectionTitle } > { section.title } </h2>
+    {
+        section.gate && (
+            <span style={ styles.gateBadge }> GATE </span>
+            )
+    }
+    {
+        section.weight && (
+            <span style={ styles.weightBadge }> { section.weight } % </span>
+            )
+    }
+    </div>
+        )
+}
+
+{/* Content */ }
+<div style={ styles.content }> { renderSection() } </div>
+
+{/* Navigation */ }
+{
+    !isComplete && (
+        <div style={ styles.navBar }>
+            {!isWelcome && (
+                <button style={ styles.backButton } onClick = { goBack } >
+                ← Back
+        </button>
+            )
+}
+<div style={ { flex: 1 } } />
+    < button
+style = {{
+                ...styles.nextButton,
+        opacity: canProceed() ? 1 : 0.35,
+            cursor: canProceed() ? "pointer" : "not-allowed",
+              }}
+onClick = { canProceed() ?goNext: undefined }
+    >
+{
+    isWelcome
+    ? "BEGIN ASSESSMENT →"
+        : currentSection === SECTIONS.length - 2
+            ? "SUBMIT ASSESSMENT →"
+            : "CONTINUE →"
+}
+    </button>
+    </div>
+        )}
+</div>
+    </div>
+  );
+}
+
+const styles = {
+    root: {
+        minHeight: "100vh",
+        background: "#0F0F0F",
+        fontFamily:
+            "'DM Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+        color: "#F5F0E8",
+        padding: "20px 16px",
+    },
+    container: {
+        maxWidth: 720,
+        margin: "0 auto",
+    },
+    header: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "16px 0 24px",
+        borderBottom: "1px solid #1E1E1E",
+        marginBottom: 24,
+    },
+    headerLeft: {
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+    },
+    logo: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+        background: "linear-gradient(135deg, #C8A862, #A08840)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 800,
+        fontSize: 15,
+        letterSpacing: 1,
+        color: "#0F0F0F",
+    },
+    companyName: {
+        fontWeight: 700,
+        fontSize: 16,
+        color: "#F5F0E8",
+        letterSpacing: 0.3,
+    },
+    assessmentLabel: {
+        fontSize: 12,
+        color: "#8A8478",
+        fontWeight: 500,
+        marginTop: 2,
+    },
+    headerRight: {},
+    timerBadge: {
+        fontSize: 13,
+        color: "#8A8478",
+        background: "#1A1A1A",
+        padding: "6px 12px",
+        borderRadius: 20,
+        border: "1px solid #2A2A2A",
+    },
+    progressContainer: {
+        marginBottom: 20,
+    },
+    progressTrack: {
+        height: 4,
+        background: "#1A1A1A",
+        borderRadius: 4,
+        overflow: "hidden",
+    },
+    progressFill: {
+        height: "100%",
+        background: "linear-gradient(90deg, #C8A862, #E8D49A)",
+        borderRadius: 4,
+        transition: "width 0.5s ease",
+    },
+    progressLabels: {
+        display: "flex",
+        justifyContent: "space-between",
+        marginTop: 6,
+    },
+    progressText: {
+        fontSize: 12,
+        color: "#6A6560",
+    },
+    sectionNav: {
+        display: "flex",
+        gap: 8,
+        overflowX: "auto",
+        paddingBottom: 16,
+        marginBottom: 8,
+        scrollbarWidth: "none",
+    },
+    sectionDot: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6,
+        minWidth: 72,
+        padding: "8px 4px",
+        borderRadius: 8,
+        transition: "all 0.2s",
+    },
+    sectionDotActive: {
+        background: "#1A1A1A",
+        border: "1px solid #C8A862",
+    },
+    sectionDotComplete: {},
+    sectionDotIcon: {
+        fontSize: 18,
+    },
+    sectionDotLabel: {
+        fontSize: 10,
+        color: "#6A6560",
+        textAlign: "center",
+        fontWeight: 500,
+        lineHeight: 1.2,
+    },
+    sectionTitleContainer: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 24,
+        paddingTop: 8,
+    },
+    sectionIcon: {
+        fontSize: 28,
+    },
+    sectionTitle: {
+        fontSize: 24,
+        fontWeight: 700,
+        margin: 0,
+        color: "#F5F0E8",
+    },
+    gateBadge: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: "#E74C3C",
+        background: "rgba(231,76,60,0.15)",
+        padding: "3px 8px",
+        borderRadius: 4,
+        letterSpacing: 1,
+    },
+    weightBadge: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: "#C8A862",
+        background: "rgba(200,168,98,0.15)",
+        padding: "3px 8px",
+        borderRadius: 4,
+    },
+    content: {
+        minHeight: 300,
+    },
+    sectionIntro: {
+        marginBottom: 24,
+    },
+    sectionDescription: {
+        fontSize: 15,
+        color: "#A09A8E",
+        lineHeight: 1.7,
+        margin: 0,
+    },
+    gateTag: {
+        display: "inline-block",
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#E74C3C",
+        background: "rgba(231,76,60,0.12)",
+        padding: "5px 12px",
+        borderRadius: 6,
+        marginBottom: 12,
+        letterSpacing: 0.5,
+    },
+    timedTag: {
+        display: "inline-block",
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#F39C12",
+        background: "rgba(243,156,18,0.12)",
+        padding: "5px 12px",
+        borderRadius: 6,
+        marginBottom: 12,
+        letterSpacing: 0.5,
+    },
+    scenarioCard: {
+        background: "#141414",
+        border: "1px solid #1E1E1E",
+        borderRadius: 12,
+        padding: 24,
+        marginBottom: 20,
+    },
+    scenarioHeader: {
+        marginBottom: 12,
+    },
+    scenarioNumber: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#C8A862",
+        letterSpacing: 1,
+        textTransform: "uppercase",
+    },
+    scenarioPrompt: {
+        background: "#1A1A1A",
+        borderLeft: "3px solid #C8A862",
+        padding: "14px 18px",
+        borderRadius: "0 8px 8px 0",
+        marginBottom: 16,
+    },
+    scenarioText: {
+        margin: 0,
+        fontSize: 15,
+        color: "#D4CFC4",
+        lineHeight: 1.7,
+        fontStyle: "italic",
+    },
+    scenarioLabel: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#C8A862",
+        marginBottom: 10,
+        letterSpacing: 0.3,
+    },
+    textarea: {
+        width: "100%",
+        background: "#0F0F0F",
+        border: "1px solid #2A2A2A",
+        borderRadius: 8,
+        padding: "14px 16px",
+        color: "#F5F0E8",
+        fontSize: 14,
+        lineHeight: 1.6,
+        resize: "vertical",
+        outline: "none",
+        transition: "border-color 0.2s",
+        fontFamily: "inherit",
+        boxSizing: "border-box",
+    },
+    input: {
+        width: "100%",
+        background: "#0F0F0F",
+        border: "1px solid #2A2A2A",
+        borderRadius: 8,
+        padding: "14px 16px",
+        color: "#F5F0E8",
+        fontSize: 15,
+        outline: "none",
+        transition: "border-color 0.2s",
+        fontFamily: "inherit",
+        boxSizing: "border-box",
+    },
+    inputGroup: {
+        marginBottom: 16,
+    },
+    inputLabel: {
+        display: "block",
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#8A8478",
+        marginBottom: 8,
+        letterSpacing: 0.3,
+    },
+    gradingNote: {
+        background: "rgba(200,168,98,0.06)",
+        border: "1px solid rgba(200,168,98,0.15)",
+        borderRadius: 10,
+        padding: 20,
+        marginTop: 8,
+    },
+    welcomeContainer: {
+        textAlign: "center",
+        paddingTop: 20,
+    },
+    welcomeBadge: {
+        display: "inline-block",
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 3,
+        color: "#C8A862",
+        background: "rgba(200,168,98,0.1)",
+        padding: "8px 20px",
+        borderRadius: 20,
+        marginBottom: 24,
+    },
+    welcomeTitle: {
+        fontSize: 32,
+        fontWeight: 800,
+        color: "#F5F0E8",
+        margin: "0 0 8px",
+        lineHeight: 1.2,
+    },
+    welcomeSubtitle: {
+        fontSize: 18,
+        color: "#8A8478",
+        fontWeight: 400,
+        margin: 0,
+    },
+    welcomeDivider: {
+        width: 60,
+        height: 3,
+        background: "linear-gradient(90deg, #C8A862, transparent)",
+        margin: "28px auto",
+        borderRadius: 2,
+    },
+    welcomeInfo: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        textAlign: "left",
+        maxWidth: 420,
+        margin: "0 auto 28px",
+    },
+    welcomeInfoItem: {
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 14,
+        background: "#141414",
+        padding: "14px 18px",
+        borderRadius: 10,
+        border: "1px solid #1E1E1E",
+    },
+    welcomeInfoIcon: {
+        fontSize: 22,
+        marginTop: 2,
+    },
+    welcomeNote: {
+        background: "rgba(200,168,98,0.06)",
+        border: "1px solid rgba(200,168,98,0.15)",
+        borderRadius: 10,
+        padding: 20,
+        textAlign: "left",
+        maxWidth: 420,
+        margin: "0 auto 32px",
+    },
+    navBar: {
+        display: "flex",
+        alignItems: "center",
+        padding: "24px 0 16px",
+        borderTop: "1px solid #1E1E1E",
+        marginTop: 32,
+    },
+    backButton: {
+        background: "none",
+        border: "1px solid #2A2A2A",
+        color: "#8A8478",
+        padding: "12px 20px",
+        borderRadius: 8,
+        fontSize: 14,
+        fontWeight: 600,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        transition: "all 0.2s",
+    },
+    nextButton: {
+        background: "linear-gradient(135deg, #C8A862, #A08840)",
+        border: "none",
+        color: "#0F0F0F",
+        padding: "14px 28px",
+        borderRadius: 8,
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        letterSpacing: 0.5,
+        transition: "all 0.2s",
+    },
+    startButton: {
+        background: "linear-gradient(135deg, #C8A862, #A08840)",
+        border: "none",
+        color: "#0F0F0F",
+        padding: "16px 36px",
+        borderRadius: 10,
+        fontSize: 16,
+        fontWeight: 700,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        letterSpacing: 1,
+    },
+    objectionTracker: {
+        display: "flex",
+        justifyContent: "center",
+        gap: 12,
+        marginBottom: 24,
+    },
+    objectionDot: {
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 13,
+        fontWeight: 700,
+        color: "#F5F0E8",
+        border: "2px solid #333",
+        transition: "all 0.3s",
+    },
+    timerBar: {
+        position: "relative",
+        height: 6,
+        background: "#1A1A1A",
+        borderRadius: 6,
+        overflow: "hidden",
+        marginBottom: 20,
+    },
+    timerFill: {
+        height: "100%",
+        borderRadius: 6,
+        transition: "width 1s linear",
+    },
+    timerText: {
+        position: "absolute",
+        right: 0,
+        top: 12,
+        fontSize: 14,
+        fontWeight: 700,
+        fontVariantNumeric: "tabular-nums",
+    },
+    submitObjButton: {
+        width: "100%",
+        background: "#C8A862",
+        border: "none",
+        color: "#0F0F0F",
+        padding: "14px",
+        borderRadius: 8,
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        letterSpacing: 0.5,
+        marginTop: 12,
+    },
+    timeUpNote: {
+        background: "rgba(231,76,60,0.1)",
+        border: "1px solid rgba(231,76,60,0.3)",
+        borderRadius: 8,
+        padding: 16,
+        marginTop: 12,
+        color: "#E74C3C",
+        fontSize: 14,
+        fontWeight: 600,
+    },
+    crmGrid: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+    },
+    crmChip: {
+        background: "#0F0F0F",
+        border: "1px solid #2A2A2A",
+        color: "#A09A8E",
+        padding: "10px 18px",
+        borderRadius: 20,
+        fontSize: 14,
+        fontWeight: 500,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        transition: "all 0.2s",
+    },
+    crmChipActive: {
+        background: "rgba(200,168,98,0.15)",
+        borderColor: "#C8A862",
+        color: "#C8A862",
+    },
+    completeContainer: {
+        textAlign: "center",
+        paddingTop: 20,
+    },
+    completeIcon: {
+        fontSize: 56,
+        marginBottom: 16,
+    },
+    completeTitle: {
+        fontSize: 28,
+        fontWeight: 800,
+        color: "#F5F0E8",
+        margin: "0 0 8px",
+    },
+    completeSubtitle: {
+        fontSize: 16,
+        color: "#8A8478",
+        margin: "0 0 32px",
+    },
+    completeSummary: {
+        background: "#141414",
+        border: "1px solid #1E1E1E",
+        borderRadius: 12,
+        padding: 24,
+        maxWidth: 420,
+        margin: "0 auto 24px",
+        textAlign: "left",
+    },
+    summaryRow: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "10px 0",
+        borderBottom: "1px solid #1A1A1A",
+    },
+    summaryLabel: {
+        fontSize: 14,
+        color: "#8A8478",
+    },
+    summaryValue: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: "#F5F0E8",
+    },
+    completeNote: {
+        background: "rgba(200,168,98,0.06)",
+        border: "1px solid rgba(200,168,98,0.15)",
+        borderRadius: 10,
+        padding: 20,
+        maxWidth: 420,
+        margin: "0 auto 32px",
+        textAlign: "left",
+    },
+    reviewHeader: {
+        textAlign: "left",
+        marginBottom: 16,
+        paddingTop: 16,
+        borderTop: "1px solid #1E1E1E",
+    },
+    reviewGrid: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        textAlign: "left",
+    },
+    reviewItem: {
+        background: "#141414",
+        border: "1px solid #1E1E1E",
+        borderRadius: 8,
+        padding: 16,
+    },
+    reviewLabel: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: "#C8A862",
+        letterSpacing: 1,
+        textTransform: "uppercase",
+        marginBottom: 8,
+    },
+    reviewValue: {
+        fontSize: 14,
+        color: "#D4CFC4",
+        lineHeight: 1.6,
+        whiteSpace: "pre-wrap",
+    },
+};
