@@ -196,6 +196,9 @@ export default function Dashboard() {
     const [taskDay, setTD] = useState(Math.min(getTI(), 4));
     const [showAssign, setSA] = useState(false);
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+    const [clockLogs, setClock] = useState<any>({});
+    const [notWorked, setNW] = useState<any>({});
+    const [showHours, setSH] = useState(false);
 
     const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -219,7 +222,7 @@ export default function Dashboard() {
         }, 1500);
     }, []);
 
-    const pk = useCallback((ov: any = {}) => ({ wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF, ...ov }), [wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF]);
+    const pk = useCallback((ov: any = {}) => ({ wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF, clockLogs, notWorked, ...ov }), [wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF, clockLogs, notWorked]);
 
     // ── Load on mount ──────────────────────────────────────────────────────
 
@@ -241,6 +244,8 @@ export default function Dashboard() {
                         if (p.ownerTasks) setOT(p.ownerTasks);
                         if (p.sub) setSub(p.sub);
                         if (p.wF) setWF(p.wF);
+                        if (p.clockLogs) setClock(p.clockLogs);
+                        if (p.notWorked) setNW(p.notWorked);
                     }
                     if (json.streaks && Object.keys(json.streaks).length > 0) setStr(json.streaks);
                 }
@@ -258,7 +263,7 @@ export default function Dashboard() {
     };
 
     const gMDS = (mid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m), dd = wd[mid]?.[di] || {}, done = items.filter((id: string) => dd[id]).length; return { done, total: items.length, pct: items.length > 0 ? Math.round((done / items.length) * 100) : 0 }; };
-    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; for (let i = 0; i < 5; i++) { const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
+    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; for (let i = 0; i < 5; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
     const gTA = () => { const s = TEAM.map((m) => gMWS(m.id)); return Math.round(s.reduce((a, b) => a + b, 0) / s.length); };
     const gSS = (mid: string, sid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, sec = m.sections.find((s) => s.id === sid)!, dd = wd[mid]?.[di] || {}, done = sec.items.filter((i) => dd[i.id]).length; return { done, total: sec.items.length, pct: sec.items.length > 0 ? Math.round((done / sec.items.length) * 100) : 0 }; };
     const subDay = (mid: string, di: number) => { const u = { ...sub, [dkf(mid, di)]: true }; setSub(u); sv(pk({ sub: u })); };
@@ -291,8 +296,8 @@ export default function Dashboard() {
     };
 
     const resetW = () => {
-        const w = dWD(); setWd(w); setNotes({}); setCL({}); setSL({}); setOL({}); setWL({}); setTL({}); setOT({}); setSub({}); setWF(false); setSM(null);
-        sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false });
+        const w = dWD(); setWd(w); setNotes({}); setCL({}); setSL({}); setOL({}); setWL({}); setTL({}); setOT({}); setSub({}); setWF(false); setSM(null); setClock({}); setNW({});
+        sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false, clockLogs: {}, notWorked: {} });
     };
 
     const updf = (setter: any, key: string, field: string, val: any, ln: string) => { setter((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), [field]: val } }; sv(pk({ [ln]: u })); return u; }); };
@@ -306,6 +311,7 @@ export default function Dashboard() {
         if (!text.trim()) return;
         const key = dkf(mid, di), tasks = [...getOTasks(mid, di), { id: Date.now().toString(), text: text.trim() }];
         setOT((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), tasks } }; sv(pk({ ownerTasks: u })); return u; });
+        fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "task_assigned", memberId: mid, task: text.trim(), day: DAYS[di] }) }).catch(() => {});
     };
     const removeOTask = (mid: string, di: number, taskId: string) => {
         const key = dkf(mid, di), tasks = getOTasks(mid, di).filter((t: any) => t.id !== taskId);
@@ -328,6 +334,15 @@ export default function Dashboard() {
     };
 
     const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 5; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += Number(sl.jobsClosed) || 0; r += Number(sl.revenue) || 0; u += Number(sl.upsells) || 0; ur += Number(sl.upsellRevenue) || 0; } return { jobs: j, rev: r, ups: u, upRev: ur }; };
+
+    const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; setClock((p: any) => { const u = { ...p, [key]: { ...(p[key] || {}), in: time } }; sv(pk({ clockLogs: u })); return u; }); };
+    const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; setClock((p: any) => { const u = { ...p, [key]: { ...(p[key] || {}), out: time } }; sv(pk({ clockLogs: u })); return u; }); };
+    const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); setClock((p: any) => { const prev = p[key] || {}; const { [f]: _, ...rest } = prev; const u = { ...p, [key]: rest }; sv(pk({ clockLogs: u })); return u; }); };
+    const calcHrs = (inT?: string, outT?: string) => { if (!inT || !outT) return null; const [ih, im] = inT.split(':').map(Number), [oh, om] = outT.split(':').map(Number), mins = (oh * 60 + om) - (ih * 60 + im); return mins > 0 ? { h: Math.floor(mins / 60), m: mins % 60, total: mins / 60 } : null; };
+    const getMWH = (mid: string) => { let tot = 0; for (let i = 0; i < 5; i++) { const cl = clockLogs[dkf(mid, i)] || {}, r = calcHrs(cl.in, cl.out); if (r) tot += r.total; } return tot; };
+    const fmtH = (h: number) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2,'0')}m`;
+    const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); setNW((p: any) => { const u = { ...p, [key]: !p[key] }; sv(pk({ notWorked: u })); return u; }); };
+    const sendReminders = () => { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "daily_reminder" }) }).catch(() => {}); };
 
     const gTJ = (di: number) => (tintLogs[dkf("anthony", di)] || {}).jobs || [];
     const gTD = (di: number) => (tintLogs[dkf("anthony", di)] || {}).draft || {};
@@ -369,7 +384,9 @@ export default function Dashboard() {
                         <button onClick={() => setSA(!showAssign)} style={{ padding: "7px 14px", borderRadius: 8, background: showAssign ? "#ef444422" : "#1e293b", border: `1px solid ${showAssign ? "#ef444444" : "#334155"}`, color: showAssign ? "#f87171" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M, position: "relative" }}>
                             📌 ASSIGN{getAllPendingOTasks() > 0 && <span style={{ position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{getAllPendingOTasks()}</span>}
                         </button>
+                        <button onClick={() => setSH(!showHours)} style={{ padding: "7px 14px", borderRadius: 8, background: showHours ? "#22c55e22" : "#1e293b", border: `1px solid ${showHours ? "#22c55e44" : "#334155"}`, color: showHours ? "#4ade80" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>⏱️ HOURS</button>
                         <button onClick={() => setSR(!sR)} style={{ padding: "7px 14px", borderRadius: 8, background: sR ? "#a855f722" : "#1e293b", border: `1px solid ${sR ? "#a855f744" : "#334155"}`, color: sR ? "#c084fc" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>🏆 REWARDS</button>
+                        <button onClick={sendReminders} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Send end-of-day reminder emails to all team members">📧 REMIND</button>
                     </div>
                 </div>
             </div>
@@ -439,7 +456,7 @@ export default function Dashboard() {
                         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #22c55e, #3b82f6, #eab308, #f97316, #a855f7)" }} />
                         <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", letterSpacing: 2, fontFamily: M, marginBottom: 14 }}>REWARD TIERS</div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-                            {REWARD_TIERS.map((tier) => (<div key={tier.id} style={{ flex: "1 1 170px", padding: "14px", borderRadius: 12, background: `${tier.color}08`, border: `1px solid ${tier.color}25`, textAlign: "center" }}><div style={{ fontSize: 28 }}>{tier.emoji}</div><div style={{ fontSize: 12, fontWeight: 800, color: tier.color, fontFamily: M, marginTop: 4 }}>{tier.label}</div><div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>{tier.desc}</div><div style={{ marginTop: 8, padding: "4px 8px", borderRadius: 6, background: "#1e293b", fontSize: 9, color: "#64748b", fontFamily: M }}>{tier.type === "weekly" ? `${tier.minPct}%+ this week` : `${tier.minPct}%+ for ${tier.streakWeeks} weeks`}</div></div>))}
+                            {REWARD_TIERS.map((tier) => (<div key={tier.id} style={{ flex: "1 1 170px", padding: "14px", borderRadius: 12, background: `${tier.color}08`, border: `1px solid ${tier.color}25`, textAlign: "center" }}><div style={{ fontSize: 28 }}>{tier.emoji}</div><div style={{ fontSize: 12, fontWeight: 800, color: tier.color, fontFamily: M, marginTop: 4 }}>{tier.label}</div><div style={{ fontSize: 10, color: "#e2e8f0", marginTop: 4, lineHeight: 1.4 }}>{tier.desc}</div><div style={{ marginTop: 8, padding: "4px 8px", borderRadius: 6, background: "#1e293b", fontSize: 9, color: "#64748b", fontFamily: M }}>{tier.type === "weekly" ? `${tier.minPct}%+ this week` : `${tier.minPct}%+ for ${tier.streakWeeks} weeks`}</div></div>))}
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: 2, fontFamily: M, marginBottom: 10 }}>WHO'S UNLOCKED WHAT</div>
                         {TEAM.map((member) => {
@@ -449,6 +466,48 @@ export default function Dashboard() {
                                     <div style={{ display: "flex", gap: 6, flex: 1 }}>{tiers.map((t) => (<div key={t.id} style={{ width: 36, height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: t.unlocked ? `${t.color}22` : "#1e293b44", border: `1px solid ${t.unlocked ? t.color + "44" : "#1e293b"}`, fontSize: t.unlocked ? 18 : 14, opacity: t.unlocked ? 1 : 0.4, position: "relative" }}>{t.unlocked ? t.emoji : "🔒"}{!t.unlocked && t.progress > 0 && <div style={{ position: "absolute", bottom: -2, left: "50%", transform: "translateX(-50%)", fontSize: 8, color: "#64748b", fontFamily: M, whiteSpace: "nowrap" }}>{t.current}/{t.needed}</div>}</div>))}</div>
                                     <div style={{ fontSize: 12, fontWeight: 800, color: gc(gMWS(member.id)), fontFamily: M }}>{gMWS(member.id)}%</div>
                                 </div>);
+                        })}
+                    </div>
+                )}
+
+                {/* HOURS PANEL */}
+                {showHours && (
+                    <div style={{ background: "linear-gradient(135deg, #0f172a, #0f1a14)", borderRadius: 16, border: "1px solid #22c55e33", padding: "20px 24px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
+                        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #22c55e, #3b82f6)" }} />
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#22c55e", letterSpacing: 2, fontFamily: M, marginBottom: 14 }}>⏱️ WEEKLY HOURS</div>
+                        {TEAM.map((member) => {
+                            const wh = getMWH(member.id);
+                            return (
+                                <div key={member.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #1e293b" }}>
+                                    <span style={{ fontSize: 15 }}>{member.emoji}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, minWidth: 70 }}>{member.name}</span>
+                                    <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap" }}>
+                                        {DAYS.map((day, di) => {
+                                            const cl = clockLogs[dkf(member.id, di)] || {};
+                                            const dur = calcHrs(cl.in, cl.out);
+                                            const nw = notWorked[dkf(member.id, di)];
+                                            return (
+                                                <div key={di} style={{ textAlign: "center", minWidth: 56 }}>
+                                                    <div style={{ fontSize: 8, color: "#475569", fontFamily: M, marginBottom: 2 }}>{day}</div>
+                                                    {nw ? (
+                                                        <div style={{ fontSize: 10, color: "#475569", fontFamily: M }}>OFF</div>
+                                                    ) : dur ? (
+                                                        <div style={{ fontSize: 10, fontWeight: 700, color: "#e2e8f0", fontFamily: M }}>{dur.h}h {dur.m}m</div>
+                                                    ) : cl.in ? (
+                                                        <div style={{ fontSize: 10, color: "#eab308", fontFamily: M }}>{cl.in}–?</div>
+                                                    ) : (
+                                                        <div style={{ fontSize: 10, color: "#334155", fontFamily: M }}>—</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ textAlign: "right", minWidth: 64 }}>
+                                        <div style={{ fontSize: 8, color: "#475569", fontFamily: M, marginBottom: 2 }}>TOTAL</div>
+                                        <div style={{ fontSize: 16, fontWeight: 800, color: wh > 0 ? "#22c55e" : "#334155", fontFamily: M }}>{wh > 0 ? fmtH(wh) : "—"}</div>
+                                    </div>
+                                </div>
+                            );
                         })}
                     </div>
                 )}
@@ -525,15 +584,67 @@ export default function Dashboard() {
                         {/* Day selector */}
                         <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
                             {DAYS.map((day, i) => {
-                                const s = gMDS(am.id, i), sel = i === sD, td = i === Math.min(getTI(), 4), hasT = getOTasks(am.id, i).length > 0; return (
-                                    <button key={day} onClick={() => setSD(i)} style={{ flex: 1, padding: "8px 0", borderRadius: 9, border: `1px solid ${sel ? am.color : "#1e293b"}`, background: sel ? "#1e293b" : "#0f172a", cursor: "pointer", textAlign: "center", position: "relative" }}>
-                                        {td && <div style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: am.color, boxShadow: `0 0 6px ${am.color}88` }} />}
+                                const s = gMDS(am.id, i), sel = i === sD, td = i === Math.min(getTI(), 4), hasT = getOTasks(am.id, i).length > 0, nw = notWorked[dkf(am.id, i)]; return (
+                                    <button key={day} onClick={() => setSD(i)} style={{ flex: 1, padding: "8px 0", borderRadius: 9, border: `1px solid ${sel ? (nw ? "#475569" : am.color) : "#1e293b"}`, background: sel ? "#1e293b" : "#0f172a", cursor: "pointer", textAlign: "center", position: "relative" }}>
+                                        {td && !nw && <div style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: am.color, boxShadow: `0 0 6px ${am.color}88` }} />}
                                         {hasT && <div style={{ position: "absolute", top: -3, left: -3, width: 7, height: 7, borderRadius: "50%", background: "#ef4444", boxShadow: "0 0 6px #ef444488" }} />}
                                         <div style={{ fontSize: 10, fontWeight: 700, color: sel ? "#e2e8f0" : "#64748b", fontFamily: M }}>{day}</div>
-                                        <div style={{ fontSize: 16, fontWeight: 800, color: s.done > 0 ? gc(s.pct) : "#334155", fontFamily: M, marginTop: 1 }}>{s.pct}%</div>
-                                        {sub[dkf(am.id, i)] && <div style={{ fontSize: 8, color: "#22c55e", marginTop: 1 }}>✓</div>}
+                                        {nw ? (
+                                            <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", fontFamily: M, marginTop: 1 }}>OFF</div>
+                                        ) : (
+                                            <div style={{ fontSize: 16, fontWeight: 800, color: s.done > 0 ? gc(s.pct) : "#334155", fontFamily: M, marginTop: 1 }}>{s.pct}%</div>
+                                        )}
+                                        {sub[dkf(am.id, i)] && !nw && <div style={{ fontSize: 8, color: "#22c55e", marginTop: 1 }}>✓</div>}
                                     </button>);
                             })}
+                        </div>
+
+                        {/* TIME CLOCK */}
+                        <div style={{ background: "#0f172a", borderRadius: 11, border: `1px solid ${notWorked[dayKey!] ? "#ef444433" : "#1e293b"}`, marginBottom: 8, overflow: "hidden" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b", background: notWorked[dayKey!] ? "#ef444408" : "transparent" }}>
+                                <span style={{ fontSize: 14 }}>⏱️</span>
+                                <span style={{ fontSize: 12, fontWeight: 700 }}>Time Clock</span>
+                                {getMWH(am.id) > 0 && <span style={{ fontSize: 9, color: "#22c55e", fontFamily: M, fontWeight: 700, marginLeft: "auto", padding: "2px 8px", background: "#22c55e18", borderRadius: 4 }}>{fmtH(getMWH(am.id))} THIS WEEK</span>}
+                            </div>
+                            <div style={{ padding: "12px 14px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                                {notWorked[dayKey!] ? (
+                                    <div style={{ flex: 1, fontSize: 12, color: "#64748b", fontStyle: "italic" }}>Day marked as not worked — excluded from score</div>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 5 }}>CLOCK IN</div>
+                                            {(clockLogs[dayKey!] || {}).in ? (
+                                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: "#22c55e", fontFamily: M }}>{clockLogs[dayKey!].in}</div>
+                                                    {!dl && <button onClick={() => delClk(am.id, sD, 'in')} style={{ fontSize: 10, color: "#64748b", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: "2px 4px" }}>✕</button>}
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => clockIn(am.id, sD)} disabled={dl} style={{ padding: "7px 14px", borderRadius: 7, background: dl ? "#1e293b" : "#22c55e22", border: `1px solid ${dl ? "#334155" : "#22c55e55"}`, color: dl ? "#475569" : "#22c55e", fontSize: 11, fontWeight: 700, cursor: dl ? "default" : "pointer", fontFamily: M }}>▶ CLOCK IN</button>
+                                            )}
+                                        </div>
+                                        <div style={{ color: "#334155", fontSize: 16, paddingTop: 14 }}>→</div>
+                                        <div>
+                                            <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 5 }}>CLOCK OUT</div>
+                                            {(clockLogs[dayKey!] || {}).out ? (
+                                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                    <div style={{ fontSize: 20, fontWeight: 800, color: "#f87171", fontFamily: M }}>{clockLogs[dayKey!].out}</div>
+                                                    {!dl && <button onClick={() => delClk(am.id, sD, 'out')} style={{ fontSize: 10, color: "#64748b", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: "2px 4px" }}>✕</button>}
+                                                </div>
+                                            ) : (clockLogs[dayKey!] || {}).in ? (
+                                                <button onClick={() => clockOut(am.id, sD)} disabled={dl} style={{ padding: "7px 14px", borderRadius: 7, background: dl ? "#1e293b" : "#ef444422", border: `1px solid ${dl ? "#334155" : "#ef444455"}`, color: dl ? "#475569" : "#f87171", fontSize: 11, fontWeight: 700, cursor: dl ? "default" : "pointer", fontFamily: M }}>■ CLOCK OUT</button>
+                                            ) : (
+                                                <div style={{ fontSize: 11, color: "#334155", fontFamily: M, paddingTop: 4 }}>Clock in first</div>
+                                            )}
+                                        </div>
+                                        {(() => { const dur = calcHrs((clockLogs[dayKey!] || {}).in, (clockLogs[dayKey!] || {}).out); return dur && (<div><div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 5 }}>TODAY</div><div style={{ fontSize: 20, fontWeight: 800, fontFamily: M, color: "#e2e8f0" }}>{dur.h}h {dur.m}m</div></div>); })()}
+                                    </>
+                                )}
+                                <div style={{ marginLeft: "auto" }}>
+                                    <button onClick={() => toggleNW(am.id, sD)} disabled={wF} style={{ padding: "7px 12px", borderRadius: 7, fontSize: 10, fontWeight: 700, cursor: wF ? "default" : "pointer", fontFamily: M, background: notWorked[dayKey!] ? "#ef444415" : "#1e293b", border: `1px solid ${notWorked[dayKey!] ? "#ef444433" : "#334155"}`, color: notWorked[dayKey!] ? "#f87171" : "#475569" }}>
+                                        {notWorked[dayKey!] ? "✕ NOT WORKED" : "MARK NOT WORKED"}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* OWNER TASKS */}
