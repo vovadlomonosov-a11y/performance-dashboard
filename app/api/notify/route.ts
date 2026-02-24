@@ -85,7 +85,35 @@ export async function POST(req: Request) {
       );
 
     } else if (type === "test") {
-      await sendSms("+19289634573", "Test", "Test from Upstate Auto dashboard — SMS notifications are working!");
+      const locationId = process.env.GHL_LOCATION_ID!.trim();
+      const headers = ghlHeaders();
+
+      // Step 1: search contact
+      const searchUrl = `${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent("+19289634573")}&limit=1`;
+      const searchRes = await fetch(searchUrl, { headers });
+      const searchData = await searchRes.json();
+
+      // Step 2: create if needed
+      let contactId: string;
+      if (searchData.contacts?.length > 0) {
+        contactId = searchData.contacts[0].id;
+      } else {
+        const createRes = await fetch(`${GHL_BASE}/contacts/`, {
+          method: "POST", headers,
+          body: JSON.stringify({ locationId, phone: "+19289634573", firstName: "Test" }),
+        });
+        const createData = await createRes.json();
+        contactId = createData.contact?.id;
+        if (!contactId) return NextResponse.json({ ok: false, step: "create_contact", data: createData });
+      }
+
+      // Step 3: send SMS
+      const smsBody = { type: "SMS", contactId, message: "Test from Upstate Auto dashboard — SMS working!" };
+      const smsRes = await fetch(`${GHL_BASE}/conversations/messages`, {
+        method: "POST", headers, body: JSON.stringify(smsBody),
+      });
+      const smsData = await smsRes.json();
+      return NextResponse.json({ ok: smsRes.ok, status: smsRes.status, contactId, smsData, searchFound: searchData.contacts?.length > 0 });
 
     } else if (type === "daily_reminder") {
       const recipients = Object.entries(MEMBER_PHONES).filter(
