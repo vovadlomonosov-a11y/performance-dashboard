@@ -18,7 +18,7 @@ const GHL_BASE = "https://services.leadconnectorhq.com";
 
 function ghlHeaders() {
   return {
-    Authorization: `Bearer ${process.env.GHL_API_KEY}`,
+    Authorization: `Bearer ${process.env.GHL_API_KEY?.trim()}`,
     Version: "2021-04-15",
     "Content-Type": "application/json",
   };
@@ -26,7 +26,7 @@ function ghlHeaders() {
 
 async function getOrCreateContact(phone: string, name: string): Promise<string> {
   const headers = ghlHeaders();
-  const locationId = process.env.GHL_LOCATION_ID!;
+  const locationId = process.env.GHL_LOCATION_ID!.trim();
 
   // Search for existing contact by phone
   const searchRes = await fetch(
@@ -67,7 +67,7 @@ async function sendSms(phone: string, name: string, message: string): Promise<vo
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.GHL_API_KEY || !process.env.GHL_LOCATION_ID) {
+    if (!process.env.GHL_API_KEY?.trim() || !process.env.GHL_LOCATION_ID?.trim()) {
       return NextResponse.json({ ok: true, skipped: "no_ghl_configured" });
     }
 
