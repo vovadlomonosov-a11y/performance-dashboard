@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import nodemailer from "nodemailer";
 
 const TEAM_NAMES: Record<string, string> = {
   scott: "Scott",
@@ -8,93 +7,102 @@ const TEAM_NAMES: Record<string, string> = {
   nick: "Nick",
 };
 
-const MEMBER_EMAILS: Record<string, string | undefined> = {
-  scott: process.env.SCOTT_EMAIL,
-  emily: process.env.EMILY_EMAIL,
-  anthony: process.env.ANTHONY_EMAIL,
-  nick: process.env.NICK_EMAIL,
+const MEMBER_PHONES: Record<string, string | undefined> = {
+  scott: process.env.SCOTT_PHONE,
+  emily: process.env.EMILY_PHONE,
+  anthony: process.env.ANTHONY_PHONE,
+  nick: process.env.NICK_PHONE,
 };
 
-const DASHBOARD_URL =
-  process.env.DASHBOARD_URL ||
-  "https://performance-dashboard-five-psi.vercel.app";
+const GHL_BASE = "https://services.leadconnectorhq.com";
 
-function getTransporter() {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD)
-    return null;
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+function ghlHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.GHL_API_KEY}`,
+    Version: "2021-04-15",
+    "Content-Type": "application/json",
+  };
+}
+
+async function getOrCreateContact(phone: string, name: string): Promise<string> {
+  const headers = ghlHeaders();
+  const locationId = process.env.GHL_LOCATION_ID!;
+
+  // Search for existing contact by phone
+  const searchRes = await fetch(
+    `${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(phone)}&limit=1`,
+    { headers }
+  );
+  const searchData = await searchRes.json();
+  if (searchData.contacts?.length > 0) return searchData.contacts[0].id;
+
+  // Create contact if not found
+  const createRes = await fetch(`${GHL_BASE}/contacts/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ locationId, phone, firstName: name }),
   });
+  const createData = await createRes.json();
+  return createData.contact.id;
+}
+
+async function sendSms(phone: string, name: string, message: string): Promise<void> {
+  const headers = ghlHeaders();
+  const contactId = await getOrCreateContact(phone, name);
+
+  const body: Record<string, string> = { type: "SMS", contactId, message };
+  if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER;
+
+  const res = await fetch(`${GHL_BASE}/conversations/messages`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GHL SMS failed (${res.status}): ${text}`);
+  }
 }
 
 export async function POST(req: Request) {
   try {
-    const { type, memberId, task, day } = await req.json();
-
-    const transporter = getTransporter();
-    if (!transporter) {
-      return NextResponse.json({ ok: true, skipped: "no_smtp_configured" });
+    if (!process.env.GHL_API_KEY || !process.env.GHL_LOCATION_ID) {
+      return NextResponse.json({ ok: true, skipped: "no_ghl_configured" });
     }
 
-    if (type === "task_assigned") {
-      const email = MEMBER_EMAILS[memberId];
-      const name = TEAM_NAMES[memberId] || memberId;
-      if (!email) {
-        return NextResponse.json({ ok: true, skipped: "no_email_for_member" });
-      }
+    const { type, memberId, task, day } = await req.json();
 
-      await transporter.sendMail({
-        from: `"Upstate Auto Dashboard" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject: `📌 New task assigned — ${day}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 480px; color: #1e293b;">
-            <h2 style="color: #ef4444; margin-bottom: 8px;">📌 New Task Assigned</h2>
-            <p>Hi ${name},</p>
-            <p>You've been assigned a new task for <strong>${day}</strong>:</p>
-            <div style="background: #f1f5f9; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 4px; margin: 16px 0; font-size: 15px;">
-              <strong>${task}</strong>
-            </div>
-            <p>
-              <a href="${DASHBOARD_URL}" style="display: inline-block; background: #3b82f6; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
-                Open Dashboard →
-              </a>
-            </p>
-          </div>`,
-      });
+    if (type === "task_assigned") {
+      const phone = MEMBER_PHONES[memberId];
+      const name = TEAM_NAMES[memberId] || memberId;
+      if (!phone) return NextResponse.json({ ok: true, skipped: "no_phone_for_member" });
+
+      await sendSms(
+        phone,
+        name,
+        `Hi ${name} — you have a new task assigned for ${day}:\n\n"${task}"\n\nLog into the dashboard to complete it.`
+      );
+
     } else if (type === "daily_reminder") {
-      const recipients = Object.entries(MEMBER_EMAILS).filter(
-        ([, e]) => !!e
+      const recipients = Object.entries(MEMBER_PHONES).filter(
+        ([, p]) => !!p
       ) as [string, string][];
 
       await Promise.all(
-        recipients.map(([id, email]) =>
-          transporter!.sendMail({
-            from: `"Upstate Auto Dashboard" <${process.env.SMTP_USER}>`,
-            to: email,
-            subject: "⏰ Daily reminder — Submit your checklist",
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 480px; color: #1e293b;">
-                <h2 style="color: #3b82f6; margin-bottom: 8px;">Daily Checklist Reminder</h2>
-                <p>Hi ${TEAM_NAMES[id] || id},</p>
-                <p>This is your end-of-day reminder to complete and submit your performance checklist.</p>
-                <p>
-                  <a href="${DASHBOARD_URL}" style="display: inline-block; background: #3b82f6; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
-                    Open Dashboard →
-                  </a>
-                </p>
-              </div>`,
-          })
+        recipients.map(([id, phone]) =>
+          sendSms(
+            phone,
+            TEAM_NAMES[id] || id,
+            `Hi ${TEAM_NAMES[id] || id} — daily reminder to complete and submit your performance checklist before end of day.`
+          )
         )
       );
     }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    console.error("Notify error:", e);
+    console.error("GHL notify error:", e);
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
 }
