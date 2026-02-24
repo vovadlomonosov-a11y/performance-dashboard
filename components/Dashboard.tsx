@@ -263,7 +263,7 @@ export default function Dashboard() {
     };
 
     const gMDS = (mid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m), dd = wd[mid]?.[di] || {}, done = items.filter((id: string) => dd[id]).length; return { done, total: items.length, pct: items.length > 0 ? Math.round((done / items.length) * 100) : 0 }; };
-    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; for (let i = 0; i < 5; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
+    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; const today = Math.min(getTI(), 4); for (let i = 0; i <= today; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
     const gTA = () => { const s = TEAM.map((m) => gMWS(m.id)); return Math.round(s.reduce((a, b) => a + b, 0) / s.length); };
     const gSS = (mid: string, sid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, sec = m.sections.find((s) => s.id === sid)!, dd = wd[mid]?.[di] || {}, done = sec.items.filter((i) => dd[i.id]).length; return { done, total: sec.items.length, pct: sec.items.length > 0 ? Math.round((done / sec.items.length) * 100) : 0 }; };
     const subDay = (mid: string, di: number) => { const u = { ...sub, [dkf(mid, di)]: true }; setSub(u); sv(pk({ sub: u })); };
@@ -802,7 +802,7 @@ export default function Dashboard() {
                         {/* Weekly KPI */}
                         <div style={{ marginTop: 16, fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: 2, fontFamily: M, marginBottom: 8 }}>WEEKLY KPI BREAKDOWN</div>
                         {am.sections.map((sec) => {
-                            let t = 0, d = 0; for (let i = 0; i < 5; i++) { const dd = wd[am.id]?.[i] || {}; sec.items.forEach((item) => { t++; if (dd[item.id]) d++; }); } const pct = t > 0 ? Math.round((d / t) * 100) : 0; return (
+                            let t = 0, d = 0; const kpiToday = Math.min(getTI(), 4); for (let i = 0; i <= kpiToday; i++) { if (notWorked[dkf(am.id, i)]) continue; const dd = wd[am.id]?.[i] || {}; sec.items.forEach((item) => { t++; if (dd[item.id]) d++; }); } const pct = t > 0 ? Math.round((d / t) * 100) : 0; return (
                                 <div key={sec.id} style={{ background: "#0f172a", borderRadius: 9, border: "1px solid #1e293b", padding: "10px 14px", marginBottom: 5 }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 12 }}>{sec.icon}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{sec.title}</span></div><span style={{ fontSize: 14, fontWeight: 800, color: gc(pct), fontFamily: M }}>{pct}%</span></div>
                                     <div style={{ background: "#1e293b", borderRadius: 3, height: 5, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: `linear-gradient(90deg, ${gc(pct)}88, ${gc(pct)})` }} /></div>
