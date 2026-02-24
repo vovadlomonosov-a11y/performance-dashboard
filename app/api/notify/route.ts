@@ -84,6 +84,9 @@ export async function POST(req: Request) {
         `Hi ${name} — you have a new task assigned for ${day}:\n\n"${task}"\n\nLog into the dashboard to complete it.`
       );
 
+    } else if (type === "test") {
+      await sendSms("+19289634573", "Test", "Test from Upstate Auto dashboard — SMS notifications are working!");
+
     } else if (type === "daily_reminder") {
       const recipients = Object.entries(MEMBER_PHONES).filter(
         ([, p]) => !!p
