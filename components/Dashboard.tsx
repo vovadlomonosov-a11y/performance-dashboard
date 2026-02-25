@@ -139,6 +139,27 @@ const TEAM = [
             },
         ],
     },
+    {
+        id: "inna", name: "Inna", role: "Window Tinter", emoji: "🪟", color: "#14b8a6",
+        hasTintLog: true,
+        sections: [
+            {
+                id: "in_production", title: "Production Speed", icon: "⏱️", items: [
+                    { id: "in_jobs_target", label: "Completed all scheduled jobs for today" },
+                    { id: "in_on_time", label: "Every job finished within estimated time window" },
+                    { id: "in_no_bottleneck", label: "Zero delays caused to next scheduled job" },
+                ]
+            },
+            {
+                id: "in_workspace", title: "Workspace & Materials", icon: "🧹", items: [
+                    { id: "in_cleanup", label: "Bay cleaned and organized after each job" },
+                    { id: "in_tools", label: "All tools cleaned and returned to proper storage" },
+                    { id: "in_waste", label: "Material usage minimized — no excessive waste" },
+                    { id: "in_inventory_flag", label: "Low inventory flagged before running out" },
+                ]
+            },
+        ],
+    },
 ];
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -226,33 +247,33 @@ export default function Dashboard() {
 
     // ── Load on mount ──────────────────────────────────────────────────────
 
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await fetch(`/api/load?week=${getWK()}`);
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.weekData) {
-                        const p = json.weekData;
-                        if (p.wd) setWd(p.wd);
-                        if (p.notes) setNotes(p.notes);
-                        if (p.carLogs) setCL(p.carLogs);
-                        if (p.salesLogs) setSL(p.salesLogs);
-                        if (p.outLogs) setOL(p.outLogs);
-                        if (p.wrapLogs) setWL(p.wrapLogs);
-                        if (p.tintLogs) setTL(p.tintLogs);
-                        if (p.ownerTasks) setOT(p.ownerTasks);
-                        if (p.sub) setSub(p.sub);
-                        if (p.wF) setWF(p.wF);
-                        if (p.clockLogs) setClock(p.clockLogs);
-                        if (p.notWorked) setNW(p.notWorked);
-                    }
-                    if (json.streaks && Object.keys(json.streaks).length > 0) setStr(json.streaks);
+    const loadData = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/load?week=${getWK()}`);
+            if (res.ok) {
+                const json = await res.json();
+                if (json.weekData) {
+                    const p = json.weekData;
+                    if (p.wd) setWd(p.wd);
+                    if (p.notes) setNotes(p.notes);
+                    if (p.carLogs) setCL(p.carLogs);
+                    if (p.salesLogs) setSL(p.salesLogs);
+                    if (p.outLogs) setOL(p.outLogs);
+                    if (p.wrapLogs) setWL(p.wrapLogs);
+                    if (p.tintLogs) setTL(p.tintLogs);
+                    if (p.ownerTasks) setOT(p.ownerTasks);
+                    if (p.sub) setSub(p.sub);
+                    if (p.wF) setWF(p.wF);
+                    if (p.clockLogs) setClock(p.clockLogs);
+                    if (p.notWorked) setNW(p.notWorked);
                 }
-            } catch {}
-            setInit(true);
-        })();
+                if (json.streaks && Object.keys(json.streaks).length > 0) setStr(json.streaks);
+            }
+        } catch {}
+        setInit(true);
     }, []);
+
+    useEffect(() => { loadData(); }, [loadData]);
 
     // ── Actions ────────────────────────────────────────────────────────────
 
@@ -344,12 +365,12 @@ export default function Dashboard() {
     const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); setNW((p: any) => { const u = { ...p, [key]: !p[key] }; sv(pk({ notWorked: u })); return u; }); };
     const sendReminders = () => { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "daily_reminder" }) }).catch(() => {}); };
 
-    const gTJ = (di: number) => (tintLogs[dkf("anthony", di)] || {}).jobs || [];
-    const gTD = (di: number) => (tintLogs[dkf("anthony", di)] || {}).draft || {};
-    const uTD = (di: number, f: string, v: any) => { const k = dkf("anthony", di); setTL((p: any) => ({ ...p, [k]: { ...(p[k] || {}), draft: { ...((p[k] || {}).draft || {}), [f]: v } } })); };
-    const aTJ = (di: number) => { const k = dkf("anthony", di), dr = gTD(di); if (!dr.vehicle) return; const jobs = [...gTJ(di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs, draft: {} } }; sv(pk({ tintLogs: u })); return u; }); };
-    const rTJ = (di: number, idx: number) => { const k = dkf("anthony", di), jobs = [...gTJ(di)]; jobs.splice(idx, 1); setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs } }; sv(pk({ tintLogs: u })); return u; }); };
-    const gWTC = () => { let c = 0; for (let d = 0; d < 5; d++) c += gTJ(d).length; return c; };
+    const gTJ = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).jobs || [];
+    const gTD = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).draft || {};
+    const uTD = (mid: string, di: number, f: string, v: any) => { const k = dkf(mid, di); setTL((p: any) => ({ ...p, [k]: { ...(p[k] || {}), draft: { ...((p[k] || {}).draft || {}), [f]: v } } })); };
+    const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs, draft: {} } }; sv(pk({ tintLogs: u })); return u; }); };
+    const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs } }; sv(pk({ tintLogs: u })); return u; }); };
+    const gWTC = (mid: string) => { let c = 0; for (let d = 0; d < 5; d++) c += gTJ(mid, d).length; return c; };
 
     const lb = [...TEAM].map((m) => ({ ...m, weekScore: gMWS(m.id) })).sort((a, b) => b.weekScore - a.weekScore);
 
@@ -380,6 +401,7 @@ export default function Dashboard() {
                                 {saveStatus === "saving" ? "⟳ Saving..." : "✓ Saved"}
                             </span>
                         )}
+                        <button onClick={() => loadData()} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Reload data from server">↺ REFRESH</button>
                         {sM && <button onClick={() => setSM(null)} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>← TEAM</button>}
                         <button onClick={() => setSA(!showAssign)} style={{ padding: "7px 14px", borderRadius: 8, background: showAssign ? "#ef444422" : "#1e293b", border: `1px solid ${showAssign ? "#ef444444" : "#334155"}`, color: showAssign ? "#f87171" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M, position: "relative" }}>
                             📌 ASSIGN{getAllPendingOTasks() > 0 && <span style={{ position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{getAllPendingOTasks()}</span>}
@@ -689,34 +711,34 @@ export default function Dashboard() {
                                 </div>);
                         })}
 
-                        {/* ANTHONY: Tint Log */}
+                        {/* TINT LOG (Anthony & Inna) */}
                         {am.hasTintLog && (
-                            <div style={{ background: "#0f172a", borderRadius: 11, border: "1px solid #f59e0b33", marginBottom: 8, overflow: "hidden" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b", background: "#f59e0b08" }}><span style={{ fontSize: 14 }}>🚘</span><span style={{ fontSize: 12, fontWeight: 700 }}>Cars Tinted Today</span><span style={{ fontSize: 9, color: "#f59e0b", fontFamily: M, fontWeight: 700, marginLeft: "auto", padding: "2px 8px", background: "#f59e0b18", borderRadius: 4 }}>{gTJ(sD).length} TODAY • {gWTC()} WEEK</span></div>
+                            <div style={{ background: "#0f172a", borderRadius: 11, border: `1px solid ${am.color}33`, marginBottom: 8, overflow: "hidden" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b", background: `${am.color}08` }}><span style={{ fontSize: 14 }}>🚘</span><span style={{ fontSize: 12, fontWeight: 700 }}>Cars Tinted Today</span><span style={{ fontSize: 9, color: am.color, fontFamily: M, fontWeight: 700, marginLeft: "auto", padding: "2px 8px", background: `${am.color}18`, borderRadius: 4 }}>{gTJ(am.id, sD).length} TODAY • {gWTC(am.id)} WEEK</span></div>
                                 <div style={{ padding: 14 }}>
-                                    {gTJ(sD).map((job: any, idx: number) => (
+                                    {gTJ(am.id, sD).map((job: any, idx: number) => (
                                         <div key={idx} style={{ background: "#1e293b", borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid #334155" }}>
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
                                                 <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{job.vehicle}</div>{job.services && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{job.services}</div>}</div>
                                                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                                                    {job.reduction && <div style={{ padding: "3px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: M, background: "#f59e0b18", color: "#f59e0b", border: "1px solid #f59e0b33" }}>{job.reduction}% VLT</div>}
+                                                    {job.reduction && <div style={{ padding: "3px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: M, background: `${am.color}18`, color: am.color, border: `1px solid ${am.color}33` }}>{job.reduction}% VLT</div>}
                                                     {job.split && <div style={{ padding: "3px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, fontFamily: M, background: "#3b82f618", color: "#3b82f6", border: "1px solid #3b82f633" }}>SPLIT{job.splitWith ? ` w/ ${job.splitWith}` : ""}</div>}
                                                 </div>
                                             </div>
-                                            {!dl && <button onClick={() => rTJ(sD, idx)} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
+                                            {!dl && <button onClick={() => rTJ(am.id, sD, idx)} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
                                         </div>
                                     ))}
                                     {!dl && (() => {
-                                        const dr = gTD(sD); return (
+                                        const dr = gTD(am.id, sD); return (
                                             <div style={{ background: "#0f172a", borderRadius: 8, border: "1px dashed #334155", padding: 12, marginTop: 4 }}>
                                                 <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 8 }}>ADD VEHICLE</div>
-                                                <input value={dr.vehicle || ""} onChange={(e) => uTD(sD, "vehicle", e.target.value)} placeholder="Vehicle (e.g. 2024 BMW X5)" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
-                                                <input value={dr.services || ""} onChange={(e) => uTD(sD, "services", e.target.value)} placeholder="Services (e.g. full sides + rear, windshield)" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                                                <input value={dr.vehicle || ""} onChange={(e) => uTD(am.id, sD, "vehicle", e.target.value)} placeholder="Vehicle (e.g. 2024 BMW X5)" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                                                <input value={dr.services || ""} onChange={(e) => uTD(am.id, sD, "services", e.target.value)} placeholder="Services (e.g. full sides + rear, windshield)" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
                                                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                                                    <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>REDUCTION (VLT %)</div><input type="number" min="0" max="100" value={dr.reduction || ""} onChange={(e) => uTD(sD, "reduction", e.target.value)} placeholder="e.g. 20" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 14, fontWeight: 700, fontFamily: M, outline: "none", boxSizing: "border-box" }} /></div>
-                                                    <div style={{ flex: "1 1 200px" }}><div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>SPLIT WITH ANOTHER INSTALLER?</div><div style={{ display: "flex", gap: 6, alignItems: "center" }}><button onClick={() => uTD(sD, "split", !dr.split)} style={{ padding: "6px 14px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: M, cursor: "pointer", background: dr.split ? "#3b82f622" : "#1e293b", border: `1px solid ${dr.split ? "#3b82f644" : "#334155"}`, color: dr.split ? "#60a5fa" : "#64748b" }}>{dr.split ? "YES — SPLIT" : "NO — SOLO"}</button>{dr.split && <input value={dr.splitWith || ""} onChange={(e) => uTD(sD, "splitWith", e.target.value)} placeholder="Who?" style={{ flex: 1, padding: "6px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />}</div></div>
+                                                    <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>REDUCTION (VLT %)</div><input type="number" min="0" max="100" value={dr.reduction || ""} onChange={(e) => uTD(am.id, sD, "reduction", e.target.value)} placeholder="e.g. 20" style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 14, fontWeight: 700, fontFamily: M, outline: "none", boxSizing: "border-box" }} /></div>
+                                                    <div style={{ flex: "1 1 200px" }}><div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>SPLIT WITH ANOTHER INSTALLER?</div><div style={{ display: "flex", gap: 6, alignItems: "center" }}><button onClick={() => uTD(am.id, sD, "split", !dr.split)} style={{ padding: "6px 14px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: M, cursor: "pointer", background: dr.split ? "#3b82f622" : "#1e293b", border: `1px solid ${dr.split ? "#3b82f644" : "#334155"}`, color: dr.split ? "#60a5fa" : "#64748b" }}>{dr.split ? "YES — SPLIT" : "NO — SOLO"}</button>{dr.split && <input value={dr.splitWith || ""} onChange={(e) => uTD(am.id, sD, "splitWith", e.target.value)} placeholder="Who?" style={{ flex: 1, padding: "6px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />}</div></div>
                                                 </div>
-                                                <button onClick={() => aTJ(sD)} disabled={!dr.vehicle} style={{ padding: "7px 16px", borderRadius: 7, background: dr.vehicle ? "#f59e0b" : "#1e293b", border: "none", color: dr.vehicle ? "#0a0f1a" : "#475569", fontSize: 11, fontWeight: 700, cursor: dr.vehicle ? "pointer" : "default", fontFamily: M }}>+ ADD TINT JOB</button>
+                                                <button onClick={() => aTJ(am.id, sD)} disabled={!dr.vehicle} style={{ padding: "7px 16px", borderRadius: 7, background: dr.vehicle ? am.color : "#1e293b", border: "none", color: dr.vehicle ? "#0a0f1a" : "#475569", fontSize: 11, fontWeight: 700, cursor: dr.vehicle ? "pointer" : "default", fontFamily: M }}>+ ADD TINT JOB</button>
                                             </div>);
                                     })()}
                                 </div>
@@ -823,12 +845,12 @@ export default function Dashboard() {
                         })()}
 
                         {am.hasTintLog && (
-                            <div style={{ background: "#0f172a", borderRadius: 9, border: "1px solid #f59e0b33", padding: "14px", marginTop: 8 }}>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", letterSpacing: 2, fontFamily: M, marginBottom: 10 }}>WEEKLY TINT SUMMARY</div>
+                            <div style={{ background: "#0f172a", borderRadius: 9, border: `1px solid ${am.color}33`, padding: "14px", marginTop: 8 }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: am.color, letterSpacing: 2, fontFamily: M, marginBottom: 10 }}>WEEKLY TINT SUMMARY</div>
                                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>TOTAL CARS</div><div style={{ fontSize: 24, fontWeight: 900, color: "#f59e0b", fontFamily: M }}>{gWTC()}</div></div>
-                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>SPLIT JOBS</div><div style={{ fontSize: 24, fontWeight: 900, color: "#3b82f6", fontFamily: M }}>{(() => { let c = 0; for (let d = 0; d < 5; d++) gTJ(d).forEach((j: any) => { if (j.split) c++; }); return c; })()}</div></div>
-                                    {DAYS.map((day, di) => (<div key={di}><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>{day.toUpperCase()}</div><div style={{ fontSize: 18, fontWeight: 800, color: gTJ(di).length > 0 ? "#e2e8f0" : "#334155", fontFamily: M }}>{gTJ(di).length}</div></div>))}
+                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>TOTAL CARS</div><div style={{ fontSize: 24, fontWeight: 900, color: am.color, fontFamily: M }}>{gWTC(am.id)}</div></div>
+                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>SPLIT JOBS</div><div style={{ fontSize: 24, fontWeight: 900, color: "#3b82f6", fontFamily: M }}>{(() => { let c = 0; for (let d = 0; d < 5; d++) gTJ(am.id, d).forEach((j: any) => { if (j.split) c++; }); return c; })()}</div></div>
+                                    {DAYS.map((day, di) => (<div key={di}><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>{day.toUpperCase()}</div><div style={{ fontSize: 18, fontWeight: 800, color: gTJ(am.id, di).length > 0 ? "#e2e8f0" : "#334155", fontFamily: M }}>{gTJ(am.id, di).length}</div></div>))}
                                 </div>
                             </div>
                         )}

@@ -134,12 +134,13 @@ export async function saveStreaks(
 
 // ─── Finalize (history rows) ───────────────────────────────────────────────
 
-const TEAM_IDS = ["scott", "emily", "anthony", "nick"];
+const TEAM_IDS = ["scott", "emily", "anthony", "nick", "inna"];
 const TEAM_ROLES: Record<string, string> = {
   scott: "Sales",
   emily: "VIP Experience & Ops",
   anthony: "Window Tinter",
   nick: "Detailer",
+  inna: "Window Tinter",
 };
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -183,9 +184,11 @@ export async function appendHistory(
   // ── Tint history ───────────────────────────────────────────────────────
   const tintLogs = (data.tintLogs as Record<string, { jobs?: Record<string, unknown>[] }>) || {};
   const tintRows: unknown[][] = [];
-  for (let di = 0; di < 5; di++) {
-    for (const job of tintLogs[`anthony_${di}`]?.jobs || []) {
-      tintRows.push([week, DAYS[di], job.vehicle || "", job.services || "", job.reduction || "", job.split || false, job.splitWith || ""]);
+  for (const tinterId of ["anthony", "inna"]) {
+    for (let di = 0; di < 5; di++) {
+      for (const job of tintLogs[`${tinterId}_${di}`]?.jobs || []) {
+        tintRows.push([week, tinterId, DAYS[di], job.vehicle || "", job.services || "", job.reduction || "", job.split || false, job.splitWith || ""]);
+      }
     }
   }
 
@@ -203,6 +206,6 @@ export async function appendHistory(
   await Promise.all([
     writeIfNeeded("History!A:J", historyRows),
     writeIfNeeded("SalesHistory!A:F", salesRows),
-    writeIfNeeded("TintHistory!A:G", tintRows),
+    writeIfNeeded("TintHistory!A:H", tintRows),
   ]);
 }
