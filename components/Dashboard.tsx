@@ -319,6 +319,8 @@ export default function Dashboard() {
     };
 
     const finWeek = async () => {
+        // Cancel any pending debounced save so it can't overwrite wF: true afterwards
+        if (saveTimeout.current) clearTimeout(saveTimeout.current);
         const upd = { ...streaks } as any;
         TEAM.forEach((m) => {
             const ws = gMWS(m.id), prev: any = upd[m.id] || { weeks90: 0, weeks95: 0, history: [] };
@@ -341,12 +343,13 @@ export default function Dashboard() {
     };
 
     const resetW = () => {
+        if (!confirm("Reset all data for this week? This cannot be undone.")) return;
         const w = dWD(); setWd(w); setNotes({}); setCL({}); setSL({}); setOL({}); setWL({}); setTL({}); setOT({}); setSub({}); setWF(false); setSM(null); setClock({}); setNW({});
         sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false, clockLogs: {}, notWorked: {} });
     };
 
-    const updf = (setter: any, key: string, field: string, val: any, ln: string) => { setter((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), [field]: val } }; sv(pk({ [ln]: u })); return u; }); };
-    const updT = (setter: any, key: string, val: any, ln: string) => { setter((prev: any) => { const u = { ...prev, [key]: val }; sv(pk({ [ln]: u })); return u; }); };
+    const updf = (setter: any, current: any, key: string, field: string, val: any, ln: string) => { const u = { ...current, [key]: { ...(current[key] || {}), [field]: val } }; setter(u); sv(pk({ [ln]: u })); };
+    const updT = (setter: any, current: any, key: string, val: any, ln: string) => { const u = { ...current, [key]: val }; setter(u); sv(pk({ [ln]: u })); };
 
     // ── Owner tasks ────────────────────────────────────────────────────────
 
@@ -354,18 +357,21 @@ export default function Dashboard() {
     const getOTDone = (mid: string, di: number) => (ownerTasks[dkf(mid, di)] || {}).done || {};
     const addOTask = (mid: string, di: number, text: string) => {
         if (!text.trim()) return;
-        const key = dkf(mid, di), tasks = [...getOTasks(mid, di), { id: Date.now().toString(), text: text.trim() }];
-        setOT((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), tasks } }; sv(pk({ ownerTasks: u })); return u; });
+        const key = dkf(mid, di), tasks = [...getOTasks(mid, di), { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, text: text.trim() }];
+        const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), tasks } };
+        setOT(u); sv(pk({ ownerTasks: u }));
         fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "task_assigned", memberId: mid, task: text.trim(), day: DAYS[di] }) }).catch(() => {});
     };
     const removeOTask = (mid: string, di: number, taskId: string) => {
         const key = dkf(mid, di), tasks = getOTasks(mid, di).filter((t: any) => t.id !== taskId);
         const done = { ...getOTDone(mid, di) }; delete done[taskId];
-        setOT((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), tasks, done } }; sv(pk({ ownerTasks: u })); return u; });
+        const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), tasks, done } };
+        setOT(u); sv(pk({ ownerTasks: u }));
     };
     const toggleOTask = (mid: string, di: number, taskId: string) => {
         const key = dkf(mid, di), done = { ...getOTDone(mid, di), [taskId]: !getOTDone(mid, di)[taskId] };
-        setOT((prev: any) => { const u = { ...prev, [key]: { ...(prev[key] || {}), done } }; sv(pk({ ownerTasks: u })); return u; });
+        const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), done } };
+        setOT(u); sv(pk({ ownerTasks: u }));
     };
     const getAllPendingOTasks = () => {
         let count = 0;
@@ -378,22 +384,23 @@ export default function Dashboard() {
         return count;
     };
 
-    const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 5; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += Number(sl.jobsClosed) || 0; r += Number(sl.revenue) || 0; u += Number(sl.upsells) || 0; ur += Number(sl.upsellRevenue) || 0; } return { jobs: j, rev: r, ups: u, upRev: ur }; };
+    const safeNum = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+    const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 5; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += safeNum(sl.jobsClosed); r += safeNum(sl.revenue); u += safeNum(sl.upsells); ur += safeNum(sl.upsellRevenue); } return { jobs: j, rev: r, ups: u, upRev: ur }; };
 
-    const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; setClock((p: any) => { const u = { ...p, [key]: { ...(p[key] || {}), in: time } }; sv(pk({ clockLogs: u })); return u; }); };
-    const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; setClock((p: any) => { const u = { ...p, [key]: { ...(p[key] || {}), out: time } }; sv(pk({ clockLogs: u })); return u; }); };
-    const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); setClock((p: any) => { const prev = p[key] || {}; const { [f]: _, ...rest } = prev; const u = { ...p, [key]: rest }; sv(pk({ clockLogs: u })); return u; }); };
-    const calcHrs = (inT?: string, outT?: string) => { if (!inT || !outT) return null; const [ih, im] = inT.split(':').map(Number), [oh, om] = outT.split(':').map(Number), mins = (oh * 60 + om) - (ih * 60 + im); return mins > 0 ? { h: Math.floor(mins / 60), m: mins % 60, total: mins / 60 } : null; };
+    const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), in: time } }; setClock(u); sv(pk({ clockLogs: u })); };
+    const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), out: time } }; setClock(u); sv(pk({ clockLogs: u })); };
+    const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); const { [f]: _, ...rest } = clockLogs[key] || {}; const u = { ...clockLogs, [key]: rest }; setClock(u); sv(pk({ clockLogs: u })); };
+    const calcHrs = (inT?: string, outT?: string) => { if (!inT || !outT) return null; const [ih, im] = inT.split(':').map(Number), [oh, om] = outT.split(':').map(Number); let mins = (oh * 60 + om) - (ih * 60 + im); if (mins < 0) mins += 24 * 60; return mins > 0 ? { h: Math.floor(mins / 60), m: mins % 60, total: mins / 60 } : null; };
     const getMWH = (mid: string) => { let tot = 0; for (let i = 0; i < 5; i++) { const cl = clockLogs[dkf(mid, i)] || {}, r = calcHrs(cl.in, cl.out); if (r) tot += r.total; } return tot; };
-    const fmtH = (h: number) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2,'0')}m`;
-    const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); setNW((p: any) => { const u = { ...p, [key]: !p[key] }; sv(pk({ notWorked: u })); return u; }); };
+    const fmtH = (h: number) => { const totalMins = Math.round(h * 60); return `${Math.floor(totalMins / 60)}h ${String(totalMins % 60).padStart(2,'0')}m`; };
+    const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); const u = { ...notWorked, [key]: !notWorked[key] }; setNW(u); sv(pk({ notWorked: u })); };
     const sendReminders = () => { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "daily_reminder" }) }).catch(() => {}); };
 
     const gTJ = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).jobs || [];
     const gTD = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).draft || {};
     const uTD = (mid: string, di: number, f: string, v: any) => { const k = dkf(mid, di); setTL((p: any) => ({ ...p, [k]: { ...(p[k] || {}), draft: { ...((p[k] || {}).draft || {}), [f]: v } } })); };
-    const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs, draft: {} } }; sv(pk({ tintLogs: u })); return u; }); };
-    const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); setTL((p: any) => { const u = { ...p, [k]: { ...p[k], jobs } }; sv(pk({ tintLogs: u })); return u; }); };
+    const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs, draft: {} } }; setTL(u); sv(pk({ tintLogs: u })); };
+    const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs } }; setTL(u); sv(pk({ tintLogs: u })); };
     const gWTC = (mid: string) => { let c = 0; for (let d = 0; d < 5; d++) c += gTJ(mid, d).length; return c; };
 
     const lb = [...TEAM].map((m) => ({ ...m, weekScore: gMWS(m.id) })).sort((a, b) => b.weekScore - a.weekScore);
@@ -780,13 +787,13 @@ export default function Dashboard() {
                                                 <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{job.vehicle}</div>{job.notes && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{job.notes}</div>}</div>
                                                 <div style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: M, background: job.status === "Being Installed" ? "#22c55e18" : job.status === "Install Scheduled" ? "#3b82f618" : job.status === "Print" ? "#eab30818" : "#8b5cf618", color: job.status === "Being Installed" ? "#22c55e" : job.status === "Install Scheduled" ? "#3b82f6" : job.status === "Print" ? "#eab308" : "#8b5cf6", border: `1px solid ${job.status === "Being Installed" ? "#22c55e33" : job.status === "Install Scheduled" ? "#3b82f633" : job.status === "Print" ? "#eab30833" : "#8b5cf633"}`, whiteSpace: "nowrap" }}>{job.status}</div>
                                             </div>
-                                            {!dl && <button onClick={() => { const jobs = [...((wrapLogs[dayKey!] || {}).jobs || [])]; jobs.splice(idx, 1); setWL((p: any) => { const u = { ...p, [dayKey!]: { ...p[dayKey!], jobs } }; sv(pk({ wrapLogs: u })); return u; }); }} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
+                                            {!dl && <button onClick={() => { const jobs = [...((wrapLogs[dayKey!] || {}).jobs || [])]; jobs.splice(idx, 1); const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs } }; setWL(u); sv(pk({ wrapLogs: u })); }} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
                                         </div>
                                     ))}
                                     {!dl && (() => {
                                         const dr = (wrapLogs[dayKey!] || {}).draft || {};
                                         const uD = (f: string, v: any) => { setWL((p: any) => ({ ...p, [dayKey!]: { ...(p[dayKey!] || {}), draft: { ...((p[dayKey!] || {}).draft || {}), [f]: v } } })); };
-                                        const aJ = () => { if (!dr.vehicle) return; const jobs = [...((wrapLogs[dayKey!] || {}).jobs || []), { vehicle: dr.vehicle, status: dr.status || "Design", notes: dr.notes || "" }]; setWL((p: any) => { const u = { ...p, [dayKey!]: { ...p[dayKey!], jobs, draft: {} } }; sv(pk({ wrapLogs: u })); return u; }); };
+                                        const aJ = () => { if (!dr.vehicle) return; const jobs = [...((wrapLogs[dayKey!] || {}).jobs || []), { vehicle: dr.vehicle, status: dr.status || "Design", notes: dr.notes || "" }]; const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs, draft: {} } }; setWL(u); sv(pk({ wrapLogs: u })); };
                                         return (
                                             <div style={{ background: "#0f172a", borderRadius: 8, border: "1px dashed #334155", padding: 12, marginTop: 4 }}>
                                                 <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 8 }}>ADD WRAP JOB</div>
@@ -805,8 +812,8 @@ export default function Dashboard() {
                             <div style={{ background: "#0f172a", borderRadius: 11, border: "1px solid #1e293b", marginBottom: 8, overflow: "hidden" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b" }}><span style={{ fontSize: 14 }}>💵</span><span style={{ fontSize: 12, fontWeight: 700 }}>Today's Sales Numbers</span></div>
                                 <div style={{ padding: 14 }}>
-                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}><NI label="JOBS CLOSED" value={(salesLogs[dayKey!] || {}).jobsClosed} onChange={(v: any) => updf(setSL, dayKey!, "jobsClosed", v, "salesLogs")} disabled={dl} /><NI label="TOTAL REVENUE" prefix="$" value={(salesLogs[dayKey!] || {}).revenue} onChange={(v: any) => updf(setSL, dayKey!, "revenue", v, "salesLogs")} disabled={dl} /></div>
-                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><NI label="UPSELLS" value={(salesLogs[dayKey!] || {}).upsells} onChange={(v: any) => updf(setSL, dayKey!, "upsells", v, "salesLogs")} disabled={dl} /><NI label="UPSELL REVENUE" prefix="$" value={(salesLogs[dayKey!] || {}).upsellRevenue} onChange={(v: any) => updf(setSL, dayKey!, "upsellRevenue", v, "salesLogs")} disabled={dl} /></div>
+                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}><NI label="JOBS CLOSED" value={(salesLogs[dayKey!] || {}).jobsClosed} onChange={(v: any) => updf(setSL, salesLogs, dayKey!, "jobsClosed", v, "salesLogs")} disabled={dl} /><NI label="TOTAL REVENUE" prefix="$" value={(salesLogs[dayKey!] || {}).revenue} onChange={(v: any) => updf(setSL, salesLogs, dayKey!, "revenue", v, "salesLogs")} disabled={dl} /></div>
+                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><NI label="UPSELLS" value={(salesLogs[dayKey!] || {}).upsells} onChange={(v: any) => updf(setSL, salesLogs, dayKey!, "upsells", v, "salesLogs")} disabled={dl} /><NI label="UPSELL REVENUE" prefix="$" value={(salesLogs[dayKey!] || {}).upsellRevenue} onChange={(v: any) => updf(setSL, salesLogs, dayKey!, "upsellRevenue", v, "salesLogs")} disabled={dl} /></div>
                                 </div>
                             </div>
                         )}
@@ -816,9 +823,9 @@ export default function Dashboard() {
                             <div style={{ background: "#0f172a", borderRadius: 11, border: "1px solid #3b82f633", marginBottom: 8, overflow: "hidden" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b", background: "#3b82f608" }}><span style={{ fontSize: 14 }}>📋</span><span style={{ fontSize: 12, fontWeight: 700 }}>Outbound Log</span><span style={{ fontSize: 9, color: "#3b82f6", fontFamily: M, fontWeight: 700, marginLeft: "auto", padding: "2px 8px", background: "#3b82f618", borderRadius: 4 }}>OUTBOUND DAY</span></div>
                                 <div style={{ padding: 14 }}>
-                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}><NI label="PEOPLE SPOKEN TO" value={(outLogs[dayKey!] || {}).peopleSpokeWith} onChange={(v: any) => updf(setOL, dayKey!, "peopleSpokeWith", v, "outLogs")} disabled={dl} /></div>
+                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}><NI label="PEOPLE SPOKEN TO" value={(outLogs[dayKey!] || {}).peopleSpokeWith} onChange={(v: any) => updf(setOL, outLogs, dayKey!, "peopleSpokeWith", v, "outLogs")} disabled={dl} /></div>
                                     <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>RESULTS / SUCCESS NOTES</div>
-                                    <textarea value={(outLogs[dayKey!] || {}).successNotes || ""} onChange={(e) => updf(setOL, dayKey!, "successNotes", e.target.value, "outLogs")} placeholder="e.g. ABC Motors interested in fleet tinting" disabled={dl} style={{ width: "100%", minHeight: 70, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} />
+                                    <textarea value={(outLogs[dayKey!] || {}).successNotes || ""} onChange={(e) => updf(setOL, outLogs, dayKey!, "successNotes", e.target.value, "outLogs")} placeholder="e.g. ABC Motors interested in fleet tinting" disabled={dl} style={{ width: "100%", minHeight: 70, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} />
                                 </div>
                             </div>
                         )}
@@ -828,14 +835,14 @@ export default function Dashboard() {
                         {am.hasCarLog && (
                             <div style={{ background: "#0f172a", borderRadius: 11, border: "1px solid #1e293b", marginBottom: 8, overflow: "hidden" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b" }}><span style={{ fontSize: 14 }}>🚘</span><span style={{ fontSize: 12, fontWeight: 700 }}>Cars Worked On Today</span></div>
-                                <div style={{ padding: 14 }}><textarea value={carLogs[dayKey!] || ""} onChange={(e) => updT(setCL, dayKey!, e.target.value, "carLogs")} placeholder={"2024 Toyota Camry — full interior detail\n2023 Ford F-150 — wash + engine bay"} disabled={dl} style={{ width: "100%", minHeight: 90, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} /></div>
+                                <div style={{ padding: 14 }}><textarea value={carLogs[dayKey!] || ""} onChange={(e) => updT(setCL, carLogs, dayKey!, e.target.value, "carLogs")} placeholder={"2024 Toyota Camry — full interior detail\n2023 Ford F-150 — wash + engine bay"} disabled={dl} style={{ width: "100%", minHeight: 90, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} /></div>
                             </div>
                         )}
 
                         {/* Notes */}
                         <div style={{ background: "#0f172a", borderRadius: 11, border: "1px solid #1e293b", padding: 14, marginBottom: 10 }}>
                             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, fontFamily: M, letterSpacing: 1 }}>END-OF-DAY NOTES</div>
-                            <textarea value={notes[dayKey!] || ""} onChange={(e) => updT(setNotes, dayKey!, e.target.value, "notes")} placeholder="Issues, wins, escalations..." disabled={dl} style={{ width: "100%", minHeight: 50, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                            <textarea value={notes[dayKey!] || ""} onChange={(e) => updT(setNotes, notes, dayKey!, e.target.value, "notes")} placeholder="Issues, wins, escalations..." disabled={dl} style={{ width: "100%", minHeight: 50, background: "#1e293b", border: "1px solid #334155", borderRadius: 7, padding: 10, color: "#e2e8f0", fontSize: 12, fontFamily: S, resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                         </div>
 
                         {/* Submit */}
