@@ -74,23 +74,149 @@ export async function loadWeekData(week: string): Promise<{
   return { weekData, streaks };
 }
 
+// ─── Merge helpers ────────────────────────────────────────────────────────
+
+/**
+ * Deep-merge incoming save data into existing stored data so concurrent
+ * users don't overwrite each other. Strategy per field:
+ *
+ *  wd (checklist items):
+ *    Merge at member → day → item level.  For each item, true wins over
+ *    false (once checked it stays checked — the only way to uncheck is via
+ *    the explicit "uncheck" path which sends the single-item toggle).
+ *
+ *  sub (submissions):
+ *    Union merge — once true, never reverts.
+ *
+ *  wF (week finalized):
+ *    Sticky true — once finalized, stays finalized.
+ *
+ *  notWorked:
+ *    OR merge — if either side marks a day as not-worked, keep it.
+ *
+ *  All keyed logs (salesLogs, tintLogs, carLogs, outLogs, wrapLogs,
+ *  notes, ownerTasks, clockLogs):
+ *    Merge at the top-level key (e.g. "scott_0"). Each key belongs to one
+ *    member's one day, so the incoming version wins for that key. Existing
+ *    keys NOT present in incoming are preserved.
+ */
+function mergeWeekData(
+  existing: Record<string, any> | null,
+  incoming: Record<string, any>,
+): Record<string, any> {
+  if (!existing) return incoming;
+
+  const merged: Record<string, any> = { ...existing };
+
+  // ── wd: checklist items (true wins) ──────────────────────────────────
+  if (incoming.wd) {
+    const eWd = existing.wd || {};
+    const iWd = incoming.wd;
+    const mWd: Record<string, any> = { ...eWd };
+    for (const mid of Object.keys(iWd)) {
+      mWd[mid] = { ...(eWd[mid] || {}) };
+      for (const di of Object.keys(iWd[mid] || {})) {
+        const eDayItems = (eWd[mid] || {})[di] || {};
+        const iDayItems = iWd[mid][di] || {};
+        mWd[mid][di] = { ...eDayItems };
+        for (const itemId of Object.keys(iDayItems)) {
+          // true wins: once checked, stays checked
+          mWd[mid][di][itemId] = eDayItems[itemId] || iDayItems[itemId];
+        }
+      }
+    }
+    merged.wd = mWd;
+  }
+
+  // ── sub: submissions (once true, never reverts) ──────────────────────
+  if (incoming.sub !== undefined) {
+    const eSub = existing.sub || {};
+    const iSub = incoming.sub || {};
+    merged.sub = { ...eSub };
+    for (const key of Object.keys(iSub)) {
+      if (iSub[key]) merged.sub[key] = true;
+    }
+    // Preserve any existing true values not in incoming
+    for (const key of Object.keys(eSub)) {
+      if (eSub[key]) merged.sub[key] = true;
+    }
+  }
+
+  // ── wF: sticky true ─────────────────────────────────────────────────
+  merged.wF = existing.wF || incoming.wF || false;
+
+  // ── notWorked: OR merge ─────────────────────────────────────────────
+  if (incoming.notWorked !== undefined) {
+    const eNW = existing.notWorked || {};
+    const iNW = incoming.notWorked || {};
+    merged.notWorked = { ...eNW };
+    for (const key of Object.keys(iNW)) {
+      merged.notWorked[key] = eNW[key] || iNW[key];
+    }
+  }
+
+  // ── Keyed logs: merge at top-level key, incoming wins per key ───────
+  for (const field of ["salesLogs", "tintLogs", "carLogs", "outLogs", "wrapLogs", "notes", "ownerTasks", "clockLogs"] as const) {
+    if (incoming[field] !== undefined) {
+      const eField = existing[field] || {};
+      const iField = incoming[field] || {};
+      merged[field] = { ...eField };
+      for (const key of Object.keys(iField)) {
+        // Only overwrite if incoming has actual content for this key
+        const iVal = iField[key];
+        const hasContent =
+          iVal && (typeof iVal !== "object" || Object.keys(iVal).length > 0);
+        if (hasContent) {
+          merged[field][key] = iVal;
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
 // ─── Save ──────────────────────────────────────────────────────────────────
 
-export async function saveWeekData(week: string, data: Record<string, unknown>): Promise<void> {
+export async function saveWeekData(
+  week: string,
+  data: Record<string, unknown>,
+  unchecks?: { member: string; day: number; item: string }[],
+  force?: boolean,
+): Promise<void> {
   const sheets = getSheets();
   const timestamp = new Date().toISOString();
-  const dataJson = JSON.stringify(data);
 
+  // Load existing data so we can merge instead of overwrite
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: "WeeklyData!A:A",
+    range: "WeeklyData!A:C",
   });
 
   const rows = res.data.values || [];
   let rowIndex = -1;
+  let existingData: Record<string, any> | null = null;
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === week) { rowIndex = i + 1; break; }
+    if (rows[i][0] === week) {
+      rowIndex = i + 1;
+      try { existingData = JSON.parse(rows[i][2]); } catch {}
+      break;
+    }
   }
+
+  // force=true skips merge (used by reset)
+  const merged = force ? (data as Record<string, any>) : mergeWeekData(existingData, data as Record<string, any>);
+
+  // Apply explicit unchecks AFTER the merge (overrides the true-wins rule)
+  if (!force && unchecks && merged.wd) {
+    for (const { member, day, item } of unchecks) {
+      if (merged.wd[member]?.[day]) {
+        merged.wd[member][day][item] = false;
+      }
+    }
+  }
+
+  const dataJson = JSON.stringify(merged);
 
   if (rowIndex === -1) {
     await sheets.spreadsheets.values.append({

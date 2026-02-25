@@ -225,15 +225,20 @@ export default function Dashboard() {
 
     // ── Persistence ────────────────────────────────────────────────────────
 
-    const sv = useCallback((data: any) => {
+    const pendingUnchecks = useRef<{member: string; day: number; item: string}[]>([]);
+
+    const sv = useCallback((data: any, opts?: { force?: boolean }) => {
         if (saveTimeout.current) clearTimeout(saveTimeout.current);
         setSaveStatus("saving");
+        const unchecks = [...pendingUnchecks.current];
+        pendingUnchecks.current = [];
+        const force = opts?.force || false;
         saveTimeout.current = setTimeout(async () => {
             try {
                 await fetch("/api/save", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ week: getWK(), data }),
+                    body: JSON.stringify({ week: getWK(), data, unchecks: unchecks.length > 0 ? unchecks : undefined, force }),
                 });
                 setSaveStatus("saved");
                 setTimeout(() => setSaveStatus("idle"), 2000);
@@ -290,7 +295,9 @@ export default function Dashboard() {
 
     const toggle = (mid: string, di: number, iid: string) => {
         if (sub[dkf(mid, di)] || wF) return;
-        const u = { ...wd, [mid]: { ...wd[mid], [di]: { ...wd[mid]?.[di], [iid]: !wd[mid]?.[di]?.[iid] } } };
+        const newVal = !wd[mid]?.[di]?.[iid];
+        if (!newVal) pendingUnchecks.current.push({ member: mid, day: di, item: iid });
+        const u = { ...wd, [mid]: { ...wd[mid], [di]: { ...wd[mid]?.[di], [iid]: newVal } } };
         setWd(u); sv(pk({ wd: u }));
     };
 
@@ -345,7 +352,7 @@ export default function Dashboard() {
     const resetW = () => {
         if (!confirm("Reset all data for this week? This cannot be undone.")) return;
         const w = dWD(); setWd(w); setNotes({}); setCL({}); setSL({}); setOL({}); setWL({}); setTL({}); setOT({}); setSub({}); setWF(false); setSM(null); setClock({}); setNW({});
-        sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false, clockLogs: {}, notWorked: {} });
+        sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false, clockLogs: {}, notWorked: {} }, { force: true });
     };
 
     const updf = (setter: any, current: any, key: string, field: string, val: any, ln: string) => { const u = { ...current, [key]: { ...(current[key] || {}), [field]: val } }; setter(u); sv(pk({ [ln]: u })); };
