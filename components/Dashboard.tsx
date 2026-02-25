@@ -254,7 +254,18 @@ export default function Dashboard() {
                 const json = await res.json();
                 if (json.weekData) {
                     const p = json.weekData;
-                    if (p.wd) setWd(p.wd);
+                    if (p.wd) {
+                        // Merge saved wd into fresh defaults so new team members (e.g. Inna)
+                        // always start with all their items initialized to false
+                        const merged: any = dWD();
+                        for (const [mid, memberDays] of Object.entries(p.wd as Record<string, any>)) {
+                            if (!merged[mid]) merged[mid] = {};
+                            for (const [di, items] of Object.entries(memberDays as Record<string, any>)) {
+                                merged[mid][di] = { ...(merged[mid][di] || {}), ...(items as any) };
+                            }
+                        }
+                        setWd(merged);
+                    }
                     if (p.notes) setNotes(p.notes);
                     if (p.carLogs) setCL(p.carLogs);
                     if (p.salesLogs) setSL(p.salesLogs);
@@ -287,7 +298,20 @@ export default function Dashboard() {
     const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; const today = Math.min(getTI(), 4); for (let i = 0; i <= today; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
     const gTA = () => { const s = TEAM.map((m) => gMWS(m.id)); return Math.round(s.reduce((a, b) => a + b, 0) / s.length); };
     const gSS = (mid: string, sid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, sec = m.sections.find((s) => s.id === sid)!, dd = wd[mid]?.[di] || {}, done = sec.items.filter((i) => dd[i.id]).length; return { done, total: sec.items.length, pct: sec.items.length > 0 ? Math.round((done / sec.items.length) * 100) : 0 }; };
-    const subDay = (mid: string, di: number) => { const u = { ...sub, [dkf(mid, di)]: true }; setSub(u); sv(pk({ sub: u })); };
+    const subDay = (mid: string, di: number) => {
+        const u = { ...sub, [dkf(mid, di)]: true };
+        setSub(u);
+        const data = pk({ sub: u });
+        // Cancel any pending debounce and save immediately — submissions must persist
+        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        setSaveStatus("saving");
+        fetch("/api/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ week: getWK(), data }),
+        }).then(() => { setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); })
+          .catch(() => { setSaveStatus("idle"); });
+    };
 
     const gUT = (mid: string) => {
         const ws = gMWS(mid), st: any = streaks[mid] || { weeks90: 0, weeks95: 0 }, w90 = st.weeks90 + (ws >= 90 ? 1 : 0), w95 = st.weeks95 + (ws >= 95 ? 1 : 0);
