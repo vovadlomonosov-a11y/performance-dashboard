@@ -93,10 +93,11 @@ const TEAM = [
             },
             {
                 id: "workspace", title: "Workspace & Materials", icon: "🧹", items: [
-                    { id: "an_cleanup", label: "Bay cleaned and organized after each job" },
+                    { id: "an_trash", label: "Trash taken out" },
                     { id: "an_tools", label: "All tools cleaned and returned to proper storage" },
                     { id: "an_waste", label: "Material usage minimized — no excessive waste" },
-                    { id: "an_inventory_flag", label: "Low inventory flagged before running out" },
+                    { id: "an_inventory_weekly", label: "Inventory done once a week. Friday." },
+                    { id: "an_overstock", label: "Any overstock items organized and put in storage" },
                 ]
             },
         ],
@@ -152,10 +153,11 @@ const TEAM = [
             },
             {
                 id: "in_workspace", title: "Workspace & Materials", icon: "🧹", items: [
-                    { id: "in_cleanup", label: "Bay cleaned and organized after each job" },
+                    { id: "in_trash", label: "Trash taken out" },
                     { id: "in_tools", label: "All tools cleaned and returned to proper storage" },
                     { id: "in_waste", label: "Material usage minimized — no excessive waste" },
-                    { id: "in_inventory_flag", label: "Low inventory flagged before running out" },
+                    { id: "in_inventory_weekly", label: "Inventory done once a week. Friday." },
+                    { id: "in_overstock", label: "Any overstock items organized and put in storage" },
                 ]
             },
         ],
@@ -197,6 +199,9 @@ const NI = ({ label, value, onChange, disabled, prefix }: any) => (
 );
 
 export default function Dashboard() {
+    const [userRole, setUserRole] = useState<string | null>(null); // null=not logged in, "owner", or member id
+    const [pinInput, setPinInput] = useState("");
+    const [pinError, setPinError] = useState("");
     const [wd, setWd] = useState(dWD);
     const [sD, setSD] = useState(Math.min(getTI(), 4));
     const [sM, setSM] = useState<string | null>(null);
@@ -291,10 +296,56 @@ export default function Dashboard() {
 
     useEffect(() => { loadData(); }, [loadData]);
 
+    // ── Auth ────────────────────────────────────────────────────────────────
+
+    useEffect(() => {
+        const saved = localStorage.getItem("dashboard_role");
+        if (saved) setUserRole(saved);
+    }, []);
+
+    const doLogin = async () => {
+        setPinError("");
+        try {
+            const res = await fetch("/api/auth", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pin: pinInput }),
+            });
+            const json = await res.json();
+            if (res.ok && json.role) {
+                setUserRole(json.role);
+                localStorage.setItem("dashboard_role", json.role);
+                setPinInput("");
+                // Auto-select member view for non-owners
+                if (json.role !== "owner") setSM(json.role);
+            } else {
+                setPinError("Invalid PIN");
+            }
+        } catch {
+            setPinError("Connection error");
+        }
+    };
+
+    const doLogout = () => {
+        setUserRole(null);
+        localStorage.removeItem("dashboard_role");
+        setSM(null);
+        setPinInput("");
+    };
+
+    const isOwner = userRole === "owner";
+
+    // Auto-select member view for non-owners on role restore
+    useEffect(() => {
+        if (userRole && userRole !== "owner" && !sM) setSM(userRole);
+    }, [userRole, sM]);
+
     // ── Actions ────────────────────────────────────────────────────────────
 
+    const canEdit = (mid: string) => isOwner || userRole === mid;
+
     const toggle = (mid: string, di: number, iid: string) => {
-        if (sub[dkf(mid, di)] || wF) return;
+        if (!canEdit(mid) || sub[dkf(mid, di)] || wF) return;
         const newVal = !wd[mid]?.[di]?.[iid];
         if (!newVal) pendingUnchecks.current.push({ member: mid, day: di, item: iid });
         const u = { ...wd, [mid]: { ...wd[mid], [di]: { ...wd[mid]?.[di], [iid]: newVal } } };
@@ -306,6 +357,7 @@ export default function Dashboard() {
     const gTA = () => { const s = TEAM.map((m) => gMWS(m.id)); return Math.round(s.reduce((a, b) => a + b, 0) / s.length); };
     const gSS = (mid: string, sid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, sec = m.sections.find((s) => s.id === sid)!, dd = wd[mid]?.[di] || {}, done = sec.items.filter((i) => dd[i.id]).length; return { done, total: sec.items.length, pct: sec.items.length > 0 ? Math.round((done / sec.items.length) * 100) : 0 }; };
     const subDay = (mid: string, di: number) => {
+        if (!canEdit(mid)) return;
         const u = { ...sub, [dkf(mid, di)]: true };
         setSub(u);
         const data = pk({ sub: u });
@@ -321,7 +373,10 @@ export default function Dashboard() {
     };
 
     const gUT = (mid: string) => {
-        const ws = gMWS(mid), st: any = streaks[mid] || { weeks90: 0, weeks95: 0 }, w90 = st.weeks90 + (ws >= 90 ? 1 : 0), w95 = st.weeks95 + (ws >= 95 ? 1 : 0);
+        const ws = gMWS(mid), st: any = streaks[mid] || { weeks90: 0, weeks95: 0 };
+        // Only count current week toward rewards AFTER the week is finalized
+        const w90 = st.weeks90 + (wF && ws >= 90 ? 1 : 0);
+        const w95 = st.weeks95 + (wF && ws >= 95 ? 1 : 0);
         return REWARD_TIERS.map((tier) => { const sc = tier.minPct >= 95 ? w95 : w90; return { ...tier, unlocked: sc >= tier.streakWeeks, progress: Math.min(sc / tier.streakWeeks, 1), current: sc, needed: tier.streakWeeks }; });
     };
 
@@ -414,6 +469,31 @@ export default function Dashboard() {
 
     if (!init) return (<div style={{ background: "#0a0f1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#64748b", fontFamily: M, fontSize: 14 }}>Loading...</div></div>);
 
+    // ── Login screen ────────────────────────────────────────────────────────
+    if (!userRole) return (
+        <div style={{ background: "#0a0f1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: S }}>
+            <div style={{ background: "#1e293b", borderRadius: 16, padding: "40px 32px", width: 340, border: "1px solid #334155" }}>
+                <div style={{ textAlign: "center", marginBottom: 24 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontFamily: M, letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Upstate Auto Styling</div>
+                    <h2 style={{ color: "#e2e8f0", fontSize: 20, fontWeight: 800, margin: 0 }}>Team Dashboard</h2>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                    <input
+                        type="password"
+                        placeholder="Enter your PIN"
+                        value={pinInput}
+                        onChange={(e) => { setPinInput(e.target.value); setPinError(""); }}
+                        onKeyDown={(e) => e.key === "Enter" && doLogin()}
+                        style={{ width: "100%", padding: "12px 14px", background: "#0f172a", border: `1px solid ${pinError ? "#ef4444" : "#334155"}`, borderRadius: 8, color: "#e2e8f0", fontSize: 18, fontFamily: M, textAlign: "center", letterSpacing: 8, outline: "none", boxSizing: "border-box" }}
+                        autoFocus
+                    />
+                </div>
+                {pinError && <div style={{ color: "#ef4444", fontSize: 12, fontFamily: M, textAlign: "center", marginBottom: 12 }}>{pinError}</div>}
+                <button onClick={doLogin} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: S }}>Sign In</button>
+            </div>
+        </div>
+    );
+
     const am = sM ? TEAM.find((m) => m.id === sM) : null;
     const ds = am ? gMDS(am.id, sD) : null;
     const dayKey = am ? dkf(am.id, sD) : null;
@@ -432,7 +512,7 @@ export default function Dashboard() {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 8px #22c55e88" }} /><span style={{ fontFamily: M, fontSize: 11, color: "#64748b", letterSpacing: 2, textTransform: "uppercase" }}>Upstate Auto Styling</span></div>
                         <h1 style={{ fontSize: 21, fontWeight: 800, margin: 0, letterSpacing: -0.5, background: "linear-gradient(135deg, #e2e8f0, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Team Accountability Dashboard</h1>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {/* Save indicator */}
                         {saveStatus !== "idle" && (
                             <span style={{ fontSize: 10, fontFamily: M, color: saveStatus === "saved" ? "#22c55e" : "#64748b", letterSpacing: 1 }}>
@@ -440,13 +520,14 @@ export default function Dashboard() {
                             </span>
                         )}
                         <button onClick={() => loadData()} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Reload data from server">↺ REFRESH</button>
-                        {sM && <button onClick={() => setSM(null)} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>← TEAM</button>}
-                        <button onClick={() => setSA(!showAssign)} style={{ padding: "7px 14px", borderRadius: 8, background: showAssign ? "#ef444422" : "#1e293b", border: `1px solid ${showAssign ? "#ef444444" : "#334155"}`, color: showAssign ? "#f87171" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M, position: "relative" }}>
+                        {isOwner && sM && <button onClick={() => setSM(null)} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>← TEAM</button>}
+                        {isOwner && <button onClick={() => setSA(!showAssign)} style={{ padding: "7px 14px", borderRadius: 8, background: showAssign ? "#ef444422" : "#1e293b", border: `1px solid ${showAssign ? "#ef444444" : "#334155"}`, color: showAssign ? "#f87171" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M, position: "relative" }}>
                             📌 ASSIGN{getAllPendingOTasks() > 0 && <span style={{ position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{getAllPendingOTasks()}</span>}
-                        </button>
-                        <button onClick={() => setSH(!showHours)} style={{ padding: "7px 14px", borderRadius: 8, background: showHours ? "#22c55e22" : "#1e293b", border: `1px solid ${showHours ? "#22c55e44" : "#334155"}`, color: showHours ? "#4ade80" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>⏱️ HOURS</button>
-                        <button onClick={() => setSR(!sR)} style={{ padding: "7px 14px", borderRadius: 8, background: sR ? "#a855f722" : "#1e293b", border: `1px solid ${sR ? "#a855f744" : "#334155"}`, color: sR ? "#c084fc" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>🏆 REWARDS</button>
-                        <button onClick={sendReminders} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Send end-of-day reminder emails to all team members">📧 REMIND</button>
+                        </button>}
+                        {isOwner && <button onClick={() => setSH(!showHours)} style={{ padding: "7px 14px", borderRadius: 8, background: showHours ? "#22c55e22" : "#1e293b", border: `1px solid ${showHours ? "#22c55e44" : "#334155"}`, color: showHours ? "#4ade80" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>⏱️ HOURS</button>}
+                        {isOwner && <button onClick={() => setSR(!sR)} style={{ padding: "7px 14px", borderRadius: 8, background: sR ? "#a855f722" : "#1e293b", border: `1px solid ${sR ? "#a855f744" : "#334155"}`, color: sR ? "#c084fc" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }}>🏆 REWARDS</button>}
+                        {isOwner && <button onClick={sendReminders} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Send end-of-day reminder emails to all team members">📧 REMIND</button>}
+                        <button onClick={doLogout} style={{ padding: "7px 14px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: M }} title="Sign out">🚪 OUT</button>
                     </div>
                 </div>
             </div>
@@ -601,7 +682,7 @@ export default function Dashboard() {
                         <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: 2, fontFamily: M, marginBottom: 8, paddingLeft: 4 }}>LEADERBOARD</div>
                         {lb.map((member, rank) => {
                             const tiers = gUT(member.id), pending = getMemberPendingOTasks(member.id); return (
-                                <div key={member.id} onClick={() => setSM(member.id)} style={{ background: "#0f172a", borderRadius: 12, border: "1px solid #1e293b", padding: "12px 16px", marginBottom: 7, cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 12, position: "relative", overflow: "hidden" }} onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = member.color + "55"; (e.currentTarget as HTMLDivElement).style.background = "#111827"; }} onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#1e293b"; (e.currentTarget as HTMLDivElement).style.background = "#0f172a"; }}>
+                                <div key={member.id} onClick={() => { if (isOwner || member.id === userRole) setSM(member.id); }} style={{ background: "#0f172a", borderRadius: 12, border: "1px solid #1e293b", padding: "12px 16px", marginBottom: 7, cursor: (isOwner || member.id === userRole) ? "pointer" : "default", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 12, position: "relative", overflow: "hidden" }} onMouseEnter={(e) => { if (isOwner || member.id === userRole) { (e.currentTarget as HTMLDivElement).style.borderColor = member.color + "55"; (e.currentTarget as HTMLDivElement).style.background = "#111827"; } }} onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#1e293b"; (e.currentTarget as HTMLDivElement).style.background = "#0f172a"; }}>
                                     <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: member.color }} />
                                     <div style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: rank === 0 ? "#eab30822" : "#1e293b", border: rank === 0 ? "1px solid #eab30844" : "1px solid #334155", fontSize: 14, fontWeight: 900, fontFamily: M, color: rank === 0 ? "#eab308" : "#475569", flexShrink: 0 }}>{rank === 0 ? "👑" : `#${rank + 1}`}</div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -615,10 +696,10 @@ export default function Dashboard() {
                                     <div style={{ textAlign: "center", minWidth: 56, padding: "6px 8px", borderRadius: 8, background: gzb(member.weekScore), flexShrink: 0 }}><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>WEEK</div><div style={{ fontSize: 22, fontWeight: 900, color: gc(member.weekScore), fontFamily: M }}>{member.weekScore}%</div></div>
                                 </div>);
                         })}
-                        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                        {isOwner && <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                             {!wF && <button onClick={finWeek} style={{ padding: "10px 20px", borderRadius: 8, background: "linear-gradient(135deg, #22c55e, #16a34a)", border: "none", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: M, letterSpacing: 1 }}>✓ FINALIZE WEEK</button>}
                             <button onClick={resetW} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #334155", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: M, letterSpacing: 1 }}>RESET WEEK</button>
-                        </div>
+                        </div>}
                     </>
                 )}
 
