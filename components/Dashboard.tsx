@@ -174,7 +174,15 @@ const REWARD_TIERS = [
     { id: 5, emoji: "👑", label: "$250 + EOM Spot", desc: "$250 + Employee of the Month parking", type: "streak", minPct: 90, streakWeeks: 4, color: "#a855f7" },
 ];
 
-const getWK = () => { const n = new Date(), s = new Date(n.getFullYear(), 0, 1); return `${n.getFullYear()}-W${Math.ceil((n.getTime() - s.getTime()) / 604800000)}`; };
+const getWK = () => {
+    // ISO 8601 week number — stable Mon-Sun weeks
+    const d = new Date();
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    t.setDate(t.getDate() + 4 - (t.getDay() || 7)); // nearest Thursday
+    const yearStart = new Date(t.getFullYear(), 0, 1);
+    const wk = Math.ceil((((t.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return `${t.getFullYear()}-W${wk}`;
+};
 const getTI = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
 const gAI = (m: any) => m.sections.flatMap((s: any) => s.items.map((i: any) => i.id));
 const gc = (p: number) => p >= 90 ? "#22c55e" : p >= 75 ? "#eab308" : "#ef4444";
