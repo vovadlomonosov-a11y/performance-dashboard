@@ -195,6 +195,19 @@ const S = "'Inter', -apple-system, sans-serif";
 const dWD = () => { const d: any = {}; TEAM.forEach((m) => { d[m.id] = {}; DAYS.forEach((_, di) => { d[m.id][di] = {}; gAI(m).forEach((id: string) => { d[m.id][di][id] = false; }); }); }); return d; };
 const dSt = () => { const s: any = {}; TEAM.forEach((m) => { s[m.id] = { weeks90: 0, weeks95: 0, history: [] }; }); return s; };
 
+const fmtWeekRange = (weekStr: string): string => {
+    const m = weekStr.match(/^(\d{4})-W(\d+)$/);
+    if (!m) return weekStr;
+    const year = parseInt(m[1]), week = parseInt(m[2]);
+    const jan4 = new Date(year, 0, 4);
+    const dow = jan4.getDay() || 7;
+    const wk1Mon = new Date(jan4.getTime() - (dow - 1) * 86400000);
+    const mon = new Date(wk1Mon.getTime() + (week - 1) * 7 * 86400000);
+    const sat = new Date(mon.getTime() + 5 * 86400000);
+    const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `${fmt(mon)} – ${fmt(sat)}`;
+};
+
 const NI = ({ label, value, onChange, disabled, prefix }: any) => (
     <div style={{ flex: "1 1 120px" }}>
         <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 4 }}>{label}</div>
@@ -236,6 +249,10 @@ export default function Dashboard() {
     const [showMonthly, setSMo] = useState(false);
     const [monthlyData, setMoData] = useState<any>(null);
     const [notifyStatus, setNS] = useState<Record<string, "sending" | "ok" | "fail">>({});
+    const [histWeek, setHW] = useState<string | null>(null);
+    const [histData, setHD] = useState<any>(null);
+    const [histLoading, setHL] = useState(false);
+    const [histDay, setHDay] = useState<number>(0);
 
     const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -306,6 +323,21 @@ export default function Dashboard() {
     }, []);
 
     useEffect(() => { loadData(); }, [loadData]);
+
+    const loadHistWeek = useCallback(async (week: string) => {
+        setHL(true);
+        setHD(null);
+        try {
+            const res = await fetch(`/api/load?week=${week}`);
+            if (res.ok) {
+                const json = await res.json();
+                setHD(json.weekData || null);
+            }
+        } catch {}
+        setHL(false);
+    }, []);
+
+    useEffect(() => { setHW(null); setHD(null); }, [sM]);
 
     // ── Auth ────────────────────────────────────────────────────────────────
 
@@ -1034,6 +1066,81 @@ export default function Dashboard() {
                                 </div>
                             </div>
                         )}
+
+                        {/* PREVIOUS WEEKS */}
+                        {(() => {
+                            const hist = (streaks[am.id]?.history || []).filter((h: any) => h.week !== getWK()).slice().reverse();
+                            if (hist.length === 0) return null;
+                            return (
+                                <div style={{ marginTop: 20 }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: 2, fontFamily: M, marginBottom: 8 }}>PREVIOUS WEEKS</div>
+                                    {hist.map((h: any) => {
+                                        const isOpen = histWeek === h.week;
+                                        return (
+                                            <div key={h.week} style={{ background: "#0f172a", borderRadius: 11, border: `1px solid ${isOpen ? am.color + "44" : "#1e293b"}`, marginBottom: 6, overflow: "hidden" }}>
+                                                <div onClick={() => { if (isOpen) { setHW(null); setHD(null); } else { setHW(h.week); setHDay(0); loadHistWeek(h.week); } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer", background: isOpen ? `${am.color}08` : "transparent" }}>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: 11, fontWeight: 700, color: "#e2e8f0" }}>{fmtWeekRange(h.week)}</div>
+                                                        <div style={{ fontSize: 9, color: "#475569", fontFamily: M, marginTop: 2 }}>{h.week}</div>
+                                                    </div>
+                                                    <div style={{ background: "#1e293b", borderRadius: 6, height: 5, width: 80, overflow: "hidden" }}>
+                                                        <div style={{ width: `${h.score}%`, height: "100%", borderRadius: 6, background: gc(h.score) }} />
+                                                    </div>
+                                                    <div style={{ fontSize: 16, fontWeight: 800, color: gc(h.score), fontFamily: M, minWidth: 44, textAlign: "right" }}>{h.score}%</div>
+                                                    <div style={{ fontSize: 10, color: "#475569" }}>{isOpen ? "▲" : "▼"}</div>
+                                                </div>
+                                                {isOpen && (
+                                                    <div style={{ borderTop: `1px solid ${am.color}22`, padding: "12px 14px" }}>
+                                                        {histLoading ? (
+                                                            <div style={{ fontSize: 11, color: "#475569", fontFamily: M, textAlign: "center", padding: 12 }}>Loading...</div>
+                                                        ) : histData ? (
+                                                            <>
+                                                                <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+                                                                    {DAYS.map((day, di) => {
+                                                                        const dd = histData.wd?.[am.id]?.[di] || {};
+                                                                        const items = gAI(am);
+                                                                        const done = items.filter((id: string) => dd[id]).length;
+                                                                        const pct = items.length > 0 ? Math.round((done / items.length) * 100) : 0;
+                                                                        const sel = di === histDay;
+                                                                        return (
+                                                                            <button key={di} onClick={() => setHDay(di)} style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${sel ? am.color : "#1e293b"}`, background: sel ? "#1e293b" : "#0f172a", cursor: "pointer", textAlign: "center" }}>
+                                                                                <div style={{ fontSize: 9, fontWeight: 700, color: sel ? "#e2e8f0" : "#64748b", fontFamily: M }}>{day}</div>
+                                                                                <div style={{ fontSize: 14, fontWeight: 800, color: done > 0 ? gc(pct) : "#334155", fontFamily: M, marginTop: 1 }}>{pct}%</div>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                                {am.sections.map((sec) => (
+                                                                    <div key={sec.id} style={{ background: "#0a0f1a", borderRadius: 9, border: "1px solid #1e293b", marginBottom: 6, overflow: "hidden" }}>
+                                                                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
+                                                                            <span style={{ fontSize: 12 }}>{sec.icon}</span>
+                                                                            <span style={{ fontSize: 11, fontWeight: 700 }}>{sec.title}</span>
+                                                                        </div>
+                                                                        <div style={{ padding: "2px 0" }}>
+                                                                            {sec.items.map((item) => {
+                                                                                const chk = histData.wd?.[am.id]?.[histDay]?.[item.id] || false;
+                                                                                return (
+                                                                                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px" }}>
+                                                                                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${chk ? "#22c55e" : "#334155"}`, background: chk ? "#22c55e" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{chk && <span style={{ color: "#0a0f1a", fontSize: 11, fontWeight: 800 }}>✓</span>}</div>
+                                                                                        <span style={{ fontSize: 11, color: chk ? "#94a3b8" : "#64748b", textDecoration: chk ? "line-through" : "none" }}>{item.label}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </>
+                                                        ) : (
+                                                            <div style={{ fontSize: 11, color: "#475569", fontFamily: M, textAlign: "center", padding: 12 }}>No data available</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
                     </>
                 )}
             </div>
