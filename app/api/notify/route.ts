@@ -69,13 +69,12 @@ async function getOrCreateContact(phone: string, name: string): Promise<string> 
 
 async function sendSms(phone: string, name: string, message: string): Promise<void> {
   const headers = ghlHeaders();
-  const locationId = process.env.GHL_LOCATION_ID!.trim();
+  const contactId = await getOrCreateContact(phone, name);
 
-  // Try sending directly with toNumber (no contact lookup needed)
-  const body: Record<string, string> = { type: "SMS", toNumber: phone, message, locationId };
+  const body: Record<string, string> = { type: "SMS", contactId, message };
   if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER.trim();
 
-  console.log(`[notify] sending SMS to ${phone} (toNumber method) fromNumber=${body.fromNumber ?? "not set"}`);
+  console.log(`[notify] sending SMS to contactId=${contactId} fromNumber=${body.fromNumber ?? "not set"}`);
   const res = await fetch(`${GHL_BASE}/conversations/messages`, {
     method: "POST",
     headers,
