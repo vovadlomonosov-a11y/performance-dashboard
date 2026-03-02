@@ -30,22 +30,41 @@ async function getOrCreateContact(phone: string, name: string): Promise<string> 
   const headers = ghlHeaders();
   const locationId = process.env.GHL_LOCATION_ID!.trim();
 
-  // Search for existing contact by phone
+  console.log(`[notify] searching contact phone=${phone}`);
   const searchRes = await fetch(
     `${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(phone)}&limit=1`,
     { headers }
   );
+  if (!searchRes.ok) {
+    const err = await searchRes.text();
+    console.error(`[notify] contact search failed (${searchRes.status}):`, err);
+    throw new Error(`GHL contact search failed (${searchRes.status}): ${err}`);
+  }
   const searchData = await searchRes.json();
-  if (searchData.contacts?.length > 0) return searchData.contacts[0].id;
+  if (searchData.contacts?.length > 0) {
+    console.log(`[notify] found existing contact: ${searchData.contacts[0].id}`);
+    return searchData.contacts[0].id;
+  }
 
-  // Create contact if not found
+  console.log(`[notify] creating new contact for ${name}`);
   const createRes = await fetch(`${GHL_BASE}/contacts/`, {
     method: "POST",
     headers,
     body: JSON.stringify({ locationId, phone, firstName: name }),
   });
+  if (!createRes.ok) {
+    const err = await createRes.text();
+    console.error(`[notify] contact create failed (${createRes.status}):`, err);
+    throw new Error(`GHL contact create failed (${createRes.status}): ${err}`);
+  }
   const createData = await createRes.json();
-  return createData.contact.id;
+  const contactId = createData.contact?.id;
+  if (!contactId) {
+    console.error(`[notify] contact create response missing id:`, JSON.stringify(createData));
+    throw new Error("GHL contact create returned no id");
+  }
+  console.log(`[notify] created contact: ${contactId}`);
+  return contactId;
 }
 
 async function sendSms(phone: string, name: string, message: string): Promise<void> {
@@ -53,8 +72,9 @@ async function sendSms(phone: string, name: string, message: string): Promise<vo
   const contactId = await getOrCreateContact(phone, name);
 
   const body: Record<string, string> = { type: "SMS", contactId, message };
-  if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER;
+  if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER.trim();
 
+  console.log(`[notify] sending SMS to contactId=${contactId} fromNumber=${body.fromNumber ?? "not set"}`);
   const res = await fetch(`${GHL_BASE}/conversations/messages`, {
     method: "POST",
     headers,
@@ -63,22 +83,30 @@ async function sendSms(phone: string, name: string, message: string): Promise<vo
 
   if (!res.ok) {
     const text = await res.text();
+    console.error(`[notify] SMS send failed (${res.status}):`, text);
     throw new Error(`GHL SMS failed (${res.status}): ${text}`);
   }
+  console.log(`[notify] SMS sent OK to ${name}`);
 }
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.GHL_API_KEY?.trim() || !process.env.GHL_LOCATION_ID?.trim()) {
+    const hasGhl = !!process.env.GHL_API_KEY?.trim() && !!process.env.GHL_LOCATION_ID?.trim();
+    if (!hasGhl) {
+      console.warn("[notify] GHL not configured — skipping");
       return NextResponse.json({ ok: true, skipped: "no_ghl_configured" });
     }
 
     const { type, memberId, task, day } = await req.json();
+    console.log(`[notify] received type=${type} memberId=${memberId}`);
 
     if (type === "task_assigned") {
       const phone = MEMBER_PHONES[memberId];
       const name = TEAM_NAMES[memberId] || memberId;
-      if (!phone) return NextResponse.json({ ok: true, skipped: "no_phone_for_member" });
+      if (!phone) {
+        console.warn(`[notify] no phone configured for memberId=${memberId}`);
+        return NextResponse.json({ ok: true, skipped: "no_phone_for_member" });
+      }
 
       await sendSms(
         phone,
@@ -91,6 +119,7 @@ export async function POST(req: Request) {
         ([, p]) => !!p
       ) as [string, string][];
 
+      console.log(`[notify] sending daily reminder to ${recipients.length} recipients`);
       await Promise.all(
         recipients.map(([id, phone]) =>
           sendSms(
@@ -104,7 +133,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    console.error("GHL notify error:", e);
+    console.error("[notify] error:", e.message);
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
 }
