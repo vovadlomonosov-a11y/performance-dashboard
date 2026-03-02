@@ -84,7 +84,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: "no_ghl_configured" });
     }
 
-    const { type, memberId, task, day, phone: testPhone } = await req.json();
+    const { type, memberId, task, day, phone: testPhone, providerId: reqProviderId } = await req.json();
     console.log(`[notify] received type=${type} memberId=${memberId ?? "n/a"}`);
 
     if (type === "test" || type === "debug_test") {
@@ -112,15 +112,16 @@ export async function POST(req: Request) {
       } catch {}
 
       // Step 3: send outbound
+      const resolvedProviderId = providerId ?? reqProviderId ?? null;
       const sendBody: Record<string, unknown> = { conversationId: convId, type: "SMS", message: "Performance Dashboard SMS test - notifications are working!" };
-      if (providerId) sendBody.conversationProviderId = providerId;
+      if (resolvedProviderId) sendBody.conversationProviderId = resolvedProviderId;
       if (process.env.GHL_FROM_NUMBER) sendBody.fromNumber = process.env.GHL_FROM_NUMBER.trim();
       const mRes = await fetch(`${GHL_BASE}/conversations/messages/outbound`, {
         method: "POST", headers, body: JSON.stringify(sendBody),
       });
       const mBody = await mRes.text();
 
-      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, providerId, fromNumber: (sendBody.fromNumber ?? null), response: mBody });
+      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, providerId: resolvedProviderId, fromNumber: (sendBody.fromNumber ?? null), response: mBody });
     }
 
     if (type === "task_assigned") {
