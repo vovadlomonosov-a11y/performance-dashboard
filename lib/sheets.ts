@@ -268,7 +268,7 @@ const TEAM_ROLES: Record<string, string> = {
   nick: "Detailer",
   inna: "Window Tinter",
 };
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export async function appendHistory(
   week: string,
@@ -287,7 +287,7 @@ export async function appendHistory(
     const weekScore = lastEntry?.score ?? 0;
 
     const memberWd = wd[memberId] || {};
-    const dayPcts = Array.from({ length: 5 }, (_, di) => {
+    const dayPcts = Array.from({ length: 6 }, (_, di) => {
       const dayData = memberWd[di] || {};
       const items = Object.values(dayData);
       if (items.length === 0) return 0;
@@ -300,7 +300,7 @@ export async function appendHistory(
   // ── Sales history ──────────────────────────────────────────────────────
   const salesLogs = (data.salesLogs as Record<string, Record<string, unknown>>) || {};
   const salesRows: unknown[][] = [];
-  for (let di = 0; di < 5; di++) {
+  for (let di = 0; di < 6; di++) {
     const sl = salesLogs[`scott_${di}`] || {};
     if (sl.jobsClosed || sl.revenue) {
       salesRows.push([week, DAYS[di], sl.jobsClosed || 0, sl.revenue || 0, sl.upsells || 0, sl.upsellRevenue || 0]);
@@ -311,7 +311,7 @@ export async function appendHistory(
   const tintLogs = (data.tintLogs as Record<string, { jobs?: Record<string, unknown>[] }>) || {};
   const tintRows: unknown[][] = [];
   for (const tinterId of ["anthony", "inna"]) {
-    for (let di = 0; di < 5; di++) {
+    for (let di = 0; di < 6; di++) {
       for (const job of tintLogs[`${tinterId}_${di}`]?.jobs || []) {
         tintRows.push([week, tinterId, DAYS[di], job.vehicle || "", job.services || "", job.reduction || "", job.split || false, job.splitWith || ""]);
       }

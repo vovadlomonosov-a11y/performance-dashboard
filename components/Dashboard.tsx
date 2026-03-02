@@ -164,7 +164,7 @@ const TEAM = [
     },
 ];
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const OUTBOUND_DAYS = [1, 2];
 const REWARD_TIERS = [
     { id: 1, emoji: "🚗", label: "Free Car Wash", desc: "Full detail on your personal vehicle", type: "weekly", minPct: 90, streakWeeks: 1, color: "#22c55e" },
@@ -211,7 +211,7 @@ export default function Dashboard() {
     const [pinInput, setPinInput] = useState("");
     const [pinError, setPinError] = useState("");
     const [wd, setWd] = useState(dWD);
-    const [sD, setSD] = useState(Math.min(getTI(), 4));
+    const [sD, setSD] = useState(Math.min(getTI(), 5));
     const [sM, setSM] = useState<string | null>(null);
     const [notes, setNotes] = useState<any>({});
     const [carLogs, setCL] = useState<any>({});
@@ -227,7 +227,7 @@ export default function Dashboard() {
     const [init, setInit] = useState(false);
     const [taskInput, setTaskInput] = useState("");
     const [taskMember, setTM] = useState("");
-    const [taskDay, setTD] = useState(Math.min(getTI(), 4));
+    const [taskDay, setTD] = useState(Math.min(getTI(), 5));
     const [showAssign, setSA] = useState(false);
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
     const [clockLogs, setClock] = useState<any>({});
@@ -361,7 +361,7 @@ export default function Dashboard() {
     };
 
     const gMDS = (mid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m), dd = wd[mid]?.[di] || {}, done = items.filter((id: string) => dd[id]).length; return { done, total: items.length, pct: items.length > 0 ? Math.round((done / items.length) * 100) : 0 }; };
-    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; const today = Math.min(getTI(), 4); for (let i = 0; i <= today; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
+    const gMWS = (mid: string) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m); let t = 0, d = 0; const today = Math.min(getTI(), 5); for (let i = 0; i <= today; i++) { if (notWorked[dkf(mid, i)]) continue; const dd = wd[mid]?.[i] || {}; items.forEach((id: string) => { t++; if (dd[id]) d++; }); } return t > 0 ? Math.round((d / t) * 100) : 0; };
     const gTA = () => { const s = TEAM.map((m) => gMWS(m.id)); return Math.round(s.reduce((a, b) => a + b, 0) / s.length); };
     const gSS = (mid: string, sid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, sec = m.sections.find((s) => s.id === sid)!, dd = wd[mid]?.[di] || {}, done = sec.items.filter((i) => dd[i.id]).length; return { done, total: sec.items.length, pct: sec.items.length > 0 ? Math.round((done / sec.items.length) * 100) : 0 }; };
     const subDay = (mid: string, di: number) => {
@@ -445,23 +445,23 @@ export default function Dashboard() {
     };
     const getAllPendingOTasks = () => {
         let count = 0;
-        TEAM.forEach((m) => { for (let d = 0; d < 5; d++) { const tasks = getOTasks(m.id, d), done = getOTDone(m.id, d); tasks.forEach((t: any) => { if (!done[t.id]) count++; }); } });
+        TEAM.forEach((m) => { for (let d = 0; d < 6; d++) { const tasks = getOTasks(m.id, d), done = getOTDone(m.id, d); tasks.forEach((t: any) => { if (!done[t.id]) count++; }); } });
         return count;
     };
     const getMemberPendingOTasks = (mid: string) => {
         let count = 0;
-        for (let d = 0; d < 5; d++) { const tasks = getOTasks(mid, d), done = getOTDone(mid, d); tasks.forEach((t: any) => { if (!done[t.id]) count++; }); }
+        for (let d = 0; d < 6; d++) { const tasks = getOTasks(mid, d), done = getOTDone(mid, d); tasks.forEach((t: any) => { if (!done[t.id]) count++; }); }
         return count;
     };
 
     const safeNum = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
-    const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 5; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += safeNum(sl.jobsClosed); r += safeNum(sl.revenue); u += safeNum(sl.upsells); ur += safeNum(sl.upsellRevenue); } return { jobs: j, rev: r, ups: u, upRev: ur }; };
+    const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 6; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += safeNum(sl.jobsClosed); r += safeNum(sl.revenue); u += safeNum(sl.upsells); ur += safeNum(sl.upsellRevenue); } return { jobs: j, rev: r, ups: u, upRev: ur }; };
 
     const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), in: time } }; setClock(u); sv(pk({ clockLogs: u })); };
     const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), out: time } }; setClock(u); sv(pk({ clockLogs: u })); };
     const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); const { [f]: _, ...rest } = clockLogs[key] || {}; const u = { ...clockLogs, [key]: rest }; setClock(u); sv(pk({ clockLogs: u })); };
     const calcHrs = (inT?: string, outT?: string) => { if (!inT || !outT) return null; const [ih, im] = inT.split(':').map(Number), [oh, om] = outT.split(':').map(Number); let mins = (oh * 60 + om) - (ih * 60 + im); if (mins < 0) mins += 24 * 60; return mins > 0 ? { h: Math.floor(mins / 60), m: mins % 60, total: mins / 60 } : null; };
-    const getMWH = (mid: string) => { let tot = 0; for (let i = 0; i < 5; i++) { const cl = clockLogs[dkf(mid, i)] || {}, r = calcHrs(cl.in, cl.out); if (r) tot += r.total; } return tot; };
+    const getMWH = (mid: string) => { let tot = 0; for (let i = 0; i < 6; i++) { const cl = clockLogs[dkf(mid, i)] || {}, r = calcHrs(cl.in, cl.out); if (r) tot += r.total; } return tot; };
     const fmtH = (h: number) => { const totalMins = Math.round(h * 60); return `${Math.floor(totalMins / 60)}h ${String(totalMins % 60).padStart(2,'0')}m`; };
     const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); const u = { ...notWorked, [key]: !notWorked[key] }; setNW(u); sv(pk({ notWorked: u })); };
     const sendReminders = () => { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "daily_reminder" }) }).catch(() => {}); };
@@ -471,7 +471,7 @@ export default function Dashboard() {
     const uTD = (mid: string, di: number, f: string, v: any) => { const k = dkf(mid, di); setTL((p: any) => ({ ...p, [k]: { ...(p[k] || {}), draft: { ...((p[k] || {}).draft || {}), [f]: v } } })); };
     const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs, draft: {} } }; setTL(u); sv(pk({ tintLogs: u })); };
     const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs } }; setTL(u); sv(pk({ tintLogs: u })); };
-    const gWTC = (mid: string) => { let c = 0; for (let d = 0; d < 5; d++) c += gTJ(mid, d).length; return c; };
+    const gWTC = (mid: string) => { let c = 0; for (let d = 0; d < 6; d++) c += gTJ(mid, d).length; return c; };
 
     const lb = [...TEAM].map((m) => ({ ...m, weekScore: gMWS(m.id) })).sort((a, b) => b.weekScore - a.weekScore);
 
@@ -733,7 +733,7 @@ export default function Dashboard() {
                         {/* Day selector */}
                         <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
                             {DAYS.map((day, i) => {
-                                const s = gMDS(am.id, i), sel = i === sD, td = i === Math.min(getTI(), 4), hasT = getOTasks(am.id, i).length > 0, nw = notWorked[dkf(am.id, i)]; return (
+                                const s = gMDS(am.id, i), sel = i === sD, td = i === Math.min(getTI(), 5), hasT = getOTasks(am.id, i).length > 0, nw = notWorked[dkf(am.id, i)]; return (
                                     <button key={day} onClick={() => setSD(i)} style={{ flex: 1, padding: "8px 0", borderRadius: 9, border: `1px solid ${sel ? (nw ? "#475569" : am.color) : "#1e293b"}`, background: sel ? "#1e293b" : "#0f172a", cursor: "pointer", textAlign: "center", position: "relative" }}>
                                         {td && !nw && <div style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7, borderRadius: "50%", background: am.color, boxShadow: `0 0 6px ${am.color}88` }} />}
                                         {hasT && <div style={{ position: "absolute", top: -3, left: -3, width: 7, height: 7, borderRadius: "50%", background: "#ef4444", boxShadow: "0 0 6px #ef444488" }} />}
@@ -951,7 +951,7 @@ export default function Dashboard() {
                         {/* Weekly KPI */}
                         <div style={{ marginTop: 16, fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: 2, fontFamily: M, marginBottom: 8 }}>WEEKLY KPI BREAKDOWN</div>
                         {am.sections.map((sec) => {
-                            let t = 0, d = 0; const kpiToday = Math.min(getTI(), 4); for (let i = 0; i <= kpiToday; i++) { if (notWorked[dkf(am.id, i)]) continue; const dd = wd[am.id]?.[i] || {}; sec.items.forEach((item) => { t++; if (dd[item.id]) d++; }); } const pct = t > 0 ? Math.round((d / t) * 100) : 0; return (
+                            let t = 0, d = 0; const kpiToday = Math.min(getTI(), 5); for (let i = 0; i <= kpiToday; i++) { if (notWorked[dkf(am.id, i)]) continue; const dd = wd[am.id]?.[i] || {}; sec.items.forEach((item) => { t++; if (dd[item.id]) d++; }); } const pct = t > 0 ? Math.round((d / t) * 100) : 0; return (
                                 <div key={sec.id} style={{ background: "#0f172a", borderRadius: 9, border: "1px solid #1e293b", padding: "10px 14px", marginBottom: 5 }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 12 }}>{sec.icon}</span><span style={{ fontSize: 11, fontWeight: 700 }}>{sec.title}</span></div><span style={{ fontSize: 14, fontWeight: 800, color: gc(pct), fontFamily: M }}>{pct}%</span></div>
                                     <div style={{ background: "#1e293b", borderRadius: 3, height: 5, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: `linear-gradient(90deg, ${gc(pct)}88, ${gc(pct)})` }} /></div>
@@ -976,7 +976,7 @@ export default function Dashboard() {
                                 <div style={{ fontSize: 10, fontWeight: 700, color: am.color, letterSpacing: 2, fontFamily: M, marginBottom: 10 }}>WEEKLY TINT SUMMARY</div>
                                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                                     <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>TOTAL CARS</div><div style={{ fontSize: 24, fontWeight: 900, color: am.color, fontFamily: M }}>{gWTC(am.id)}</div></div>
-                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>SPLIT JOBS</div><div style={{ fontSize: 24, fontWeight: 900, color: "#3b82f6", fontFamily: M }}>{(() => { let c = 0; for (let d = 0; d < 5; d++) gTJ(am.id, d).forEach((j: any) => { if (j.split) c++; }); return c; })()}</div></div>
+                                    <div><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>SPLIT JOBS</div><div style={{ fontSize: 24, fontWeight: 900, color: "#3b82f6", fontFamily: M }}>{(() => { let c = 0; for (let d = 0; d < 6; d++) gTJ(am.id, d).forEach((j: any) => { if (j.split) c++; }); return c; })()}</div></div>
                                     {DAYS.map((day, di) => (<div key={di}><div style={{ fontSize: 9, color: "#475569", fontFamily: M }}>{day.toUpperCase()}</div><div style={{ fontSize: 18, fontWeight: 800, color: gTJ(am.id, di).length > 0 ? "#e2e8f0" : "#334155", fontFamily: M }}>{gTJ(am.id, di).length}</div></div>))}
                                 </div>
                             </div>
