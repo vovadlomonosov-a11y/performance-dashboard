@@ -100,10 +100,35 @@ export async function POST(req: Request) {
     const { type, memberId, task, day, phone: testPhone } = await req.json();
     console.log(`[notify] received type=${type} memberId=${memberId}`);
 
-    if (type === "test") {
+    if (type === "test" || type === "debug_test") {
       if (!testPhone) return NextResponse.json({ ok: false, error: "missing phone" }, { status: 400 });
-      await sendSms(testPhone, "Test", "✅ Performance Dashboard SMS test — notifications are working!");
-      return NextResponse.json({ ok: true });
+      const locationId = process.env.GHL_LOCATION_ID!.trim();
+      const headers = ghlHeaders();
+
+      // Step 1: search contact
+      const s1 = await fetch(`${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(testPhone)}&limit=1`, { headers });
+      const s1body = await s1.text();
+
+      let contactId: string | null = null;
+      try { const d = JSON.parse(s1body); contactId = d.contacts?.[0]?.id ?? null; } catch {}
+
+      // Step 2: create if not found
+      let s2body = null;
+      if (!contactId) {
+        const s2 = await fetch(`${GHL_BASE}/contacts/`, { method: "POST", headers, body: JSON.stringify({ locationId, phone: testPhone, firstName: "Test" }) });
+        s2body = await s2.text();
+        try { const d = JSON.parse(s2body); contactId = d.contact?.id ?? null; } catch {}
+      }
+
+      if (!contactId) return NextResponse.json({ ok: false, step: "contact", s1: s1body, s2: s2body });
+
+      // Step 3: send SMS
+      const smsBody: Record<string, string> = { type: "SMS", contactId, message: "✅ Performance Dashboard SMS test — notifications are working!" };
+      if (process.env.GHL_FROM_NUMBER) smsBody.fromNumber = process.env.GHL_FROM_NUMBER.trim();
+      const s3 = await fetch(`${GHL_BASE}/conversations/messages`, { method: "POST", headers, body: JSON.stringify(smsBody) });
+      const s3body = await s3.text();
+
+      return NextResponse.json({ ok: s3.ok, status: s3.status, contactId, fromNumber: smsBody.fromNumber ?? null, smsResponse: s3body, s1: s1body, s2: s2body });
     }
 
     if (type === "task_assigned") {
