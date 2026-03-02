@@ -97,8 +97,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: "no_ghl_configured" });
     }
 
-    const { type, memberId, task, day } = await req.json();
+    const { type, memberId, task, day, phone: testPhone } = await req.json();
     console.log(`[notify] received type=${type} memberId=${memberId}`);
+
+    if (type === "test") {
+      if (!testPhone) return NextResponse.json({ ok: false, error: "missing phone" }, { status: 400 });
+      await sendSms(testPhone, "Test", "✅ Performance Dashboard SMS test — notifications are working!");
+      return NextResponse.json({ ok: true });
+    }
 
     if (type === "task_assigned") {
       const phone = MEMBER_PHONES[memberId];
