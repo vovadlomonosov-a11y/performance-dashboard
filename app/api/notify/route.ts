@@ -111,17 +111,19 @@ export async function POST(req: Request) {
         for (const m of msgs) { if (m.conversationProviderId) { providerId = m.conversationProviderId; break; } }
       } catch {}
 
-      // Step 3: send outbound
-      const resolvedProviderId = providerId ?? reqProviderId ?? null;
-      const sendBody: Record<string, unknown> = { conversationId: convId, type: "SMS", message: "Performance Dashboard SMS test - notifications are working!" };
-      if (resolvedProviderId) sendBody.conversationProviderId = resolvedProviderId;
+      // Step 3: get contactId from the conversation and send via messages endpoint
+      let contactId: string | null = null;
+      try { contactId = JSON.parse(sBody).conversations?.[0]?.contactId ?? null; } catch {}
+
+      const sendBody: Record<string, unknown> = { type: "SMS", message: "Performance Dashboard SMS test - notifications are working!" };
+      if (contactId) sendBody.contactId = contactId;
       if (process.env.GHL_FROM_NUMBER) sendBody.fromNumber = process.env.GHL_FROM_NUMBER.trim();
-      const mRes = await fetch(`${GHL_BASE}/conversations/messages/outbound`, {
+      const mRes = await fetch(`${GHL_BASE}/conversations/messages`, {
         method: "POST", headers, body: JSON.stringify(sendBody),
       });
       const mBody = await mRes.text();
 
-      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, providerId: resolvedProviderId, fromNumber: (sendBody.fromNumber ?? null), response: mBody });
+      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, contactId, fromNumber: (sendBody.fromNumber ?? null), response: mBody });
     }
 
     if (type === "task_assigned") {
