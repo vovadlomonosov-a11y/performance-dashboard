@@ -92,7 +92,7 @@ export async function POST(req: Request) {
       const locationId = process.env.GHL_LOCATION_ID!.trim();
       const headers = ghlHeaders();
 
-      // Search conversation
+      // Step 1: find conversation
       const sRes = await fetch(
         `${GHL_BASE}/conversations/search?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(testPhone)}&limit=1`,
         { headers }
@@ -100,20 +100,27 @@ export async function POST(req: Request) {
       const sBody = await sRes.text();
       let convId: string | null = null;
       try { convId = JSON.parse(sBody).conversations?.[0]?.id ?? null; } catch {}
+      if (!convId) return NextResponse.json({ ok: false, step: "search", status: sRes.status, response: sBody });
 
-      if (!convId) {
-        return NextResponse.json({ ok: false, step: "search", status: sRes.status, response: sBody });
-      }
+      // Step 2: get conversationProviderId from messages
+      const msgRes = await fetch(`${GHL_BASE}/conversations/${convId}/messages?limit=5`, { headers });
+      const msgBody = await msgRes.text();
+      let providerId: string | null = null;
+      try {
+        const msgs = JSON.parse(msgBody).messages?.messages ?? JSON.parse(msgBody).messages ?? [];
+        for (const m of msgs) { if (m.conversationProviderId) { providerId = m.conversationProviderId; break; } }
+      } catch {}
 
-      // Send outbound
-      const sendBody: Record<string, string> = { conversationId: convId, type: "SMS", message: "Performance Dashboard SMS test - notifications are working!" };
+      // Step 3: send outbound
+      const sendBody: Record<string, unknown> = { conversationId: convId, type: "SMS", message: "Performance Dashboard SMS test - notifications are working!" };
+      if (providerId) sendBody.conversationProviderId = providerId;
       if (process.env.GHL_FROM_NUMBER) sendBody.fromNumber = process.env.GHL_FROM_NUMBER.trim();
       const mRes = await fetch(`${GHL_BASE}/conversations/messages/outbound`, {
         method: "POST", headers, body: JSON.stringify(sendBody),
       });
       const mBody = await mRes.text();
 
-      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, fromNumber: sendBody.fromNumber ?? null, response: mBody });
+      return NextResponse.json({ ok: mRes.ok, status: mRes.status, conversationId: convId, providerId, fromNumber: (sendBody.fromNumber ?? null), response: mBody });
     }
 
     if (type === "task_assigned") {
