@@ -69,12 +69,13 @@ async function getOrCreateContact(phone: string, name: string): Promise<string> 
 
 async function sendSms(phone: string, name: string, message: string): Promise<void> {
   const headers = ghlHeaders();
-  const contactId = await getOrCreateContact(phone, name);
+  const locationId = process.env.GHL_LOCATION_ID!.trim();
 
-  const body: Record<string, string> = { type: "SMS", contactId, message };
+  // Try sending directly with toNumber (no contact lookup needed)
+  const body: Record<string, string> = { type: "SMS", toNumber: phone, message, locationId };
   if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER.trim();
 
-  console.log(`[notify] sending SMS to contactId=${contactId} fromNumber=${body.fromNumber ?? "not set"}`);
+  console.log(`[notify] sending SMS to ${phone} (toNumber method) fromNumber=${body.fromNumber ?? "not set"}`);
   const res = await fetch(`${GHL_BASE}/conversations/messages`, {
     method: "POST",
     headers,
@@ -105,30 +106,13 @@ export async function POST(req: Request) {
       const locationId = process.env.GHL_LOCATION_ID!.trim();
       const headers = ghlHeaders();
 
-      // Step 1: search contact
-      const s1 = await fetch(`${GHL_BASE}/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(testPhone)}&limit=1`, { headers });
-      const s1body = await s1.text();
-
-      let contactId: string | null = null;
-      try { const d = JSON.parse(s1body); contactId = d.contacts?.[0]?.id ?? null; } catch {}
-
-      // Step 2: create if not found
-      let s2body = null;
-      if (!contactId) {
-        const s2 = await fetch(`${GHL_BASE}/contacts/`, { method: "POST", headers, body: JSON.stringify({ locationId, phone: testPhone, firstName: "Test" }) });
-        s2body = await s2.text();
-        try { const d = JSON.parse(s2body); contactId = d.contact?.id ?? null; } catch {}
-      }
-
-      if (!contactId) return NextResponse.json({ ok: false, step: "contact", s1: s1body, s2: s2body });
-
-      // Step 3: send SMS
-      const smsBody: Record<string, string> = { type: "SMS", contactId, message: "✅ Performance Dashboard SMS test — notifications are working!" };
+      // Send directly with toNumber (no contact lookup)
+      const smsBody: Record<string, string> = { type: "SMS", toNumber: testPhone, message: "✅ Performance Dashboard SMS test — notifications are working!", locationId };
       if (process.env.GHL_FROM_NUMBER) smsBody.fromNumber = process.env.GHL_FROM_NUMBER.trim();
-      const s3 = await fetch(`${GHL_BASE}/conversations/messages`, { method: "POST", headers, body: JSON.stringify(smsBody) });
-      const s3body = await s3.text();
+      const s = await fetch(`${GHL_BASE}/conversations/messages`, { method: "POST", headers, body: JSON.stringify(smsBody) });
+      const sbody = await s.text();
 
-      return NextResponse.json({ ok: s3.ok, status: s3.status, contactId, fromNumber: smsBody.fromNumber ?? null, smsResponse: s3body, s1: s1body, s2: s2body });
+      return NextResponse.json({ ok: s.ok, status: s.status, fromNumber: smsBody.fromNumber ?? null, response: sbody });
     }
 
     if (type === "task_assigned") {
