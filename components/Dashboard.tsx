@@ -1129,6 +1129,45 @@ export default function Dashboard() {
                                                                         </div>
                                                                     </div>
                                                                 ))}
+                                                                {/* ── Historical text entries ── */}
+                                                                {(() => {
+                                                                    const hKey = `${am.id}_${histDay}`;
+                                                                    const entries: { icon: string; title: string; content: string }[] = [];
+                                                                    // Car log (Nick)
+                                                                    if (am.hasCarLog && histData.carLogs?.[hKey]) entries.push({ icon: "🚘", title: "Cars Worked On", content: histData.carLogs[hKey] });
+                                                                    // Notes (all)
+                                                                    if (histData.notes?.[hKey]) entries.push({ icon: "📝", title: "End-of-Day Notes", content: histData.notes[hKey] });
+                                                                    // Wrap log (Emily)
+                                                                    if (am.hasWrapLog && histData.wrapLogs?.[hKey]) {
+                                                                        const wl = histData.wrapLogs[hKey];
+                                                                        if (wl.vehicle || wl.notes) entries.push({ icon: "📦", title: "Wrap Log", content: [wl.vehicle, wl.notes].filter(Boolean).join(" — ") });
+                                                                    }
+                                                                    // Outbound log (Scott)
+                                                                    if (am.hasOutboundLog && histData.outLogs?.[hKey]) {
+                                                                        const ol = histData.outLogs[hKey];
+                                                                        if (ol.calls || ol.followUps || ol.notes) entries.push({ icon: "📞", title: "Outbound Log", content: [`Calls: ${ol.calls || 0}`, ol.followUps ? `Follow-ups: ${ol.followUps}` : "", ol.notes].filter(Boolean).join(" · ") });
+                                                                    }
+                                                                    // Sales log (Scott)
+                                                                    if (am.hasSalesLog && histData.salesLogs?.[hKey]) {
+                                                                        const sl = histData.salesLogs[hKey];
+                                                                        if (sl.jobsClosed || sl.revenue) entries.push({ icon: "💰", title: "Sales", content: `Jobs: ${sl.jobsClosed || 0} · Revenue: $${sl.revenue || 0}${sl.upsells ? ` · Upsells: ${sl.upsells} ($${sl.upsellRevenue || 0})` : ""}` });
+                                                                    }
+                                                                    // Tint log (Anthony/Inna)
+                                                                    if (am.hasTintLog && histData.tintLogs?.[hKey]?.jobs?.length > 0) {
+                                                                        const jobs = histData.tintLogs[hKey].jobs;
+                                                                        entries.push({ icon: "🔧", title: `Tint Jobs (${jobs.length})`, content: jobs.map((j: any) => `${j.vehicle}${j.services ? ` — ${j.services}` : ""}${j.reduction ? ` (${j.reduction})` : ""}`).join("\n") });
+                                                                    }
+                                                                    if (entries.length === 0) return null;
+                                                                    return entries.map((e, i) => (
+                                                                        <div key={i} style={{ background: "#0a0f1a", borderRadius: 9, border: "1px solid #1e293b", marginBottom: 6, overflow: "hidden" }}>
+                                                                            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid #1e293b" }}>
+                                                                                <span style={{ fontSize: 12 }}>{e.icon}</span>
+                                                                                <span style={{ fontSize: 11, fontWeight: 700 }}>{e.title}</span>
+                                                                            </div>
+                                                                            <div style={{ padding: "8px 12px", fontSize: 11, color: "#94a3b8", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{e.content}</div>
+                                                                        </div>
+                                                                    ));
+                                                                })()}
                                                             </>
                                                         ) : (
                                                             <div style={{ fontSize: 11, color: "#475569", fontFamily: M, textAlign: "center", padding: 12 }}>No data available</div>
