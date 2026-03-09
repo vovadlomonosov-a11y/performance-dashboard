@@ -259,19 +259,26 @@ export default function Dashboard() {
     // ── Persistence ────────────────────────────────────────────────────────
 
     const pendingUnchecks = useRef<{member: string; day: number; item: string}[]>([]);
+    const pendingChanges = useRef<Record<string, any>>({});
 
-    const sv = useCallback((data: any, opts?: { force?: boolean }) => {
+    const sv = useCallback((changes: Record<string, any>, opts?: { force?: boolean }) => {
+        // Accumulate field-level changes so a debounce reset never drops earlier writes
+        for (const key of Object.keys(changes)) {
+            pendingChanges.current[key] = changes[key];
+        }
         if (saveTimeout.current) clearTimeout(saveTimeout.current);
         setSaveStatus("saving");
         const unchecks = [...pendingUnchecks.current];
         pendingUnchecks.current = [];
         const force = opts?.force || false;
         saveTimeout.current = setTimeout(async () => {
+            const payload = { ...pendingChanges.current };
+            pendingChanges.current = {};
             try {
                 await fetch("/api/save", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ week: getWK(), data, unchecks: unchecks.length > 0 ? unchecks : undefined, force }),
+                    body: JSON.stringify({ week: getWK(), data: payload, unchecks: unchecks.length > 0 ? unchecks : undefined, force }),
                 });
                 setSaveStatus("saved");
                 setTimeout(() => setSaveStatus("idle"), 2000);
@@ -280,6 +287,14 @@ export default function Dashboard() {
             }
         }, 1500);
     }, []);
+
+    // Flush pending changes and cancel debounce — used by immediate saves (submit, finalize)
+    const flushPending = () => {
+        const flushed = { ...pendingChanges.current };
+        pendingChanges.current = {};
+        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        return flushed;
+    };
 
     const pk = useCallback((ov: any = {}) => ({ wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF, clockLogs, notWorked, ...ov }), [wd, notes, carLogs, salesLogs, outLogs, wrapLogs, tintLogs, ownerTasks, sub, wF, clockLogs, notWorked]);
 
@@ -392,7 +407,7 @@ export default function Dashboard() {
         const newVal = !wd[mid]?.[di]?.[iid];
         if (!newVal) pendingUnchecks.current.push({ member: mid, day: di, item: iid });
         const u = { ...wd, [mid]: { ...wd[mid], [di]: { ...wd[mid]?.[di], [iid]: newVal } } };
-        setWd(u); sv(pk({ wd: u }));
+        setWd(u); sv({ wd: u });
     };
 
     const gMDS = (mid: string, di: number) => { const m = TEAM.find((t) => t.id === mid)!, items = gAI(m), dd = wd[mid]?.[di] || {}, done = items.filter((id: string) => dd[id]).length; return { done, total: items.length, pct: items.length > 0 ? Math.round((done / items.length) * 100) : 0 }; };
@@ -403,9 +418,9 @@ export default function Dashboard() {
         if (!canEdit(mid)) return;
         const u = { ...sub, [dkf(mid, di)]: true };
         setSub(u);
-        const data = pk({ sub: u });
-        // Cancel any pending debounce and save immediately — submissions must persist
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        // Flush any pending debounced changes (e.g. notes) so they aren't lost
+        const pending = flushPending();
+        const data = { ...pending, sub: u };
         setSaveStatus("saving");
         fetch("/api/save", {
             method: "POST",
@@ -424,15 +439,15 @@ export default function Dashboard() {
     };
 
     const finWeek = async () => {
-        // Cancel any pending debounced save so it can't overwrite wF: true afterwards
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        // Flush pending changes so nothing is lost, then build full payload for appendHistory
+        const pending = flushPending();
         const upd = { ...streaks } as any;
         TEAM.forEach((m) => {
             const ws = gMWS(m.id), prev: any = upd[m.id] || { weeks90: 0, weeks95: 0, history: [] };
             upd[m.id] = { weeks90: ws >= 90 ? prev.weeks90 + 1 : 0, weeks95: ws >= 95 ? prev.weeks95 + 1 : 0, history: [...(prev.history || []), { week: getWK(), score: ws }].slice(-12) };
         });
         setStr(upd); setWF(true);
-        const payload = pk({ wF: true });
+        const payload = { ...pk({ wF: true }), ...pending };
         setSaveStatus("saving");
         try {
             await fetch("/api/finalize", {
@@ -450,11 +465,12 @@ export default function Dashboard() {
     const resetW = () => {
         if (!confirm("Reset all data for this week? This cannot be undone.")) return;
         const w = dWD(); setWd(w); setNotes({}); setCL({}); setSL({}); setOL({}); setWL({}); setTL({}); setOT({}); setSub({}); setWF(false); setSM(null); setClock({}); setNW({});
+        pendingChanges.current = {};
         sv({ wd: w, notes: {}, carLogs: {}, salesLogs: {}, outLogs: {}, wrapLogs: {}, tintLogs: {}, ownerTasks: {}, sub: {}, wF: false, clockLogs: {}, notWorked: {} }, { force: true });
     };
 
-    const updf = (setter: any, current: any, key: string, field: string, val: any, ln: string) => { const u = { ...current, [key]: { ...(current[key] || {}), [field]: val } }; setter(u); sv(pk({ [ln]: u })); };
-    const updT = (setter: any, current: any, key: string, val: any, ln: string) => { const u = { ...current, [key]: val }; setter(u); sv(pk({ [ln]: u })); };
+    const updf = (setter: any, current: any, key: string, field: string, val: any, ln: string) => { const u = { ...current, [key]: { ...(current[key] || {}), [field]: val } }; setter(u); sv({ [ln]: u }); };
+    const updT = (setter: any, current: any, key: string, val: any, ln: string) => { const u = { ...current, [key]: val }; setter(u); sv({ [ln]: u }); };
 
     // ── Owner tasks ────────────────────────────────────────────────────────
 
@@ -464,7 +480,7 @@ export default function Dashboard() {
         if (!text.trim()) return;
         const key = dkf(mid, di), tasks = [...getOTasks(mid, di), { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, text: text.trim() }];
         const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), tasks } };
-        setOT(u); sv(pk({ ownerTasks: u }));
+        setOT(u); sv({ ownerTasks: u });
         const nKey = `${mid}_${Date.now()}`;
         setNS(p => ({ ...p, [nKey]: "sending" }));
         fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "task_assigned", memberId: mid, task: text.trim(), day: DAYS[di] }) })
@@ -476,12 +492,12 @@ export default function Dashboard() {
         const key = dkf(mid, di), tasks = getOTasks(mid, di).filter((t: any) => t.id !== taskId);
         const done = { ...getOTDone(mid, di) }; delete done[taskId];
         const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), tasks, done } };
-        setOT(u); sv(pk({ ownerTasks: u }));
+        setOT(u); sv({ ownerTasks: u });
     };
     const toggleOTask = (mid: string, di: number, taskId: string) => {
         const key = dkf(mid, di), done = { ...getOTDone(mid, di), [taskId]: !getOTDone(mid, di)[taskId] };
         const u = { ...ownerTasks, [key]: { ...(ownerTasks[key] || {}), done } };
-        setOT(u); sv(pk({ ownerTasks: u }));
+        setOT(u); sv({ ownerTasks: u });
     };
     const getAllPendingOTasks = () => {
         let count = 0;
@@ -497,20 +513,20 @@ export default function Dashboard() {
     const safeNum = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
     const gWST = () => { let j = 0, r = 0, u = 0, ur = 0; for (let d = 0; d < 6; d++) { const sl = salesLogs[dkf("scott", d)] || {}; j += safeNum(sl.jobsClosed); r += safeNum(sl.revenue); u += safeNum(sl.upsells); ur += safeNum(sl.upsellRevenue); } return { jobs: j, rev: r, ups: u, upRev: ur }; };
 
-    const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), in: time } }; setClock(u); sv(pk({ clockLogs: u })); };
-    const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), out: time } }; setClock(u); sv(pk({ clockLogs: u })); };
-    const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); const { [f]: _, ...rest } = clockLogs[key] || {}; const u = { ...clockLogs, [key]: rest }; setClock(u); sv(pk({ clockLogs: u })); };
+    const clockIn = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), in: time } }; setClock(u); sv({ clockLogs: u }); };
+    const clockOut = (mid: string, di: number) => { const key = dkf(mid, di), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; const u = { ...clockLogs, [key]: { ...(clockLogs[key] || {}), out: time } }; setClock(u); sv({ clockLogs: u }); };
+    const delClk = (mid: string, di: number, f: 'in' | 'out') => { const key = dkf(mid, di); const { [f]: _, ...rest } = clockLogs[key] || {}; const u = { ...clockLogs, [key]: rest }; setClock(u); sv({ clockLogs: u }); };
     const calcHrs = (inT?: string, outT?: string) => { if (!inT || !outT) return null; const [ih, im] = inT.split(':').map(Number), [oh, om] = outT.split(':').map(Number); let mins = (oh * 60 + om) - (ih * 60 + im); if (mins < 0) mins += 24 * 60; return mins > 0 ? { h: Math.floor(mins / 60), m: mins % 60, total: mins / 60 } : null; };
     const getMWH = (mid: string) => { let tot = 0; for (let i = 0; i < 6; i++) { const cl = clockLogs[dkf(mid, i)] || {}, r = calcHrs(cl.in, cl.out); if (r) tot += r.total; } return tot; };
     const fmtH = (h: number) => { const totalMins = Math.round(h * 60); return `${Math.floor(totalMins / 60)}h ${String(totalMins % 60).padStart(2,'0')}m`; };
-    const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); const u = { ...notWorked, [key]: !notWorked[key] }; setNW(u); sv(pk({ notWorked: u })); };
+    const toggleNW = (mid: string, di: number) => { if (wF) return; const key = dkf(mid, di); const u = { ...notWorked, [key]: !notWorked[key] }; setNW(u); sv({ notWorked: u }); };
     const sendReminders = () => { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "daily_reminder" }) }).catch(() => {}); };
 
     const gTJ = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).jobs || [];
     const gTD = (mid: string, di: number) => (tintLogs[dkf(mid, di)] || {}).draft || {};
     const uTD = (mid: string, di: number, f: string, v: any) => { const k = dkf(mid, di); setTL((p: any) => ({ ...p, [k]: { ...(p[k] || {}), draft: { ...((p[k] || {}).draft || {}), [f]: v } } })); };
-    const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs, draft: {} } }; setTL(u); sv(pk({ tintLogs: u })); };
-    const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs } }; setTL(u); sv(pk({ tintLogs: u })); };
+    const aTJ = (mid: string, di: number) => { const k = dkf(mid, di), dr = gTD(mid, di); if (!dr.vehicle) return; const jobs = [...gTJ(mid, di), { vehicle: dr.vehicle, reduction: dr.reduction || "", split: dr.split || false, splitWith: dr.splitWith || "", services: dr.services || "" }]; const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs, draft: {} } }; setTL(u); sv({ tintLogs: u }); };
+    const rTJ = (mid: string, di: number, idx: number) => { const k = dkf(mid, di), jobs = [...gTJ(mid, di)]; jobs.splice(idx, 1); const u = { ...tintLogs, [k]: { ...tintLogs[k], jobs } }; setTL(u); sv({ tintLogs: u }); };
     const gWTC = (mid: string) => { let c = 0; for (let d = 0; d < 6; d++) c += gTJ(mid, d).length; return c; };
 
     const lb = [...TEAM].map((m) => ({ ...m, weekScore: gMWS(m.id) })).sort((a, b) => b.weekScore - a.weekScore);
@@ -968,13 +984,13 @@ export default function Dashboard() {
                                                 <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{job.vehicle}</div>{job.notes && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{job.notes}</div>}</div>
                                                 <div style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, fontFamily: M, background: job.status === "Being Installed" ? "#22c55e18" : job.status === "Install Scheduled" ? "#3b82f618" : job.status === "Print" ? "#eab30818" : "#8b5cf618", color: job.status === "Being Installed" ? "#22c55e" : job.status === "Install Scheduled" ? "#3b82f6" : job.status === "Print" ? "#eab308" : "#8b5cf6", border: `1px solid ${job.status === "Being Installed" ? "#22c55e33" : job.status === "Install Scheduled" ? "#3b82f633" : job.status === "Print" ? "#eab30833" : "#8b5cf633"}`, whiteSpace: "nowrap" }}>{job.status}</div>
                                             </div>
-                                            {!dl && <button onClick={() => { const jobs = [...((wrapLogs[dayKey!] || {}).jobs || [])]; jobs.splice(idx, 1); const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs } }; setWL(u); sv(pk({ wrapLogs: u })); }} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
+                                            {!dl && <button onClick={() => { const jobs = [...((wrapLogs[dayKey!] || {}).jobs || [])]; jobs.splice(idx, 1); const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs } }; setWL(u); sv({ wrapLogs: u }); }} style={{ marginTop: 6, fontSize: 10, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontFamily: M, padding: 0 }}>✕ Remove</button>}
                                         </div>
                                     ))}
                                     {!dl && (() => {
                                         const dr = (wrapLogs[dayKey!] || {}).draft || {};
                                         const uD = (f: string, v: any) => { setWL((p: any) => ({ ...p, [dayKey!]: { ...(p[dayKey!] || {}), draft: { ...((p[dayKey!] || {}).draft || {}), [f]: v } } })); };
-                                        const aJ = () => { if (!dr.vehicle) return; const jobs = [...((wrapLogs[dayKey!] || {}).jobs || []), { vehicle: dr.vehicle, status: dr.status || "Design", notes: dr.notes || "" }]; const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs, draft: {} } }; setWL(u); sv(pk({ wrapLogs: u })); };
+                                        const aJ = () => { if (!dr.vehicle) return; const jobs = [...((wrapLogs[dayKey!] || {}).jobs || []), { vehicle: dr.vehicle, status: dr.status || "Design", notes: dr.notes || "" }]; const u = { ...wrapLogs, [dayKey!]: { ...wrapLogs[dayKey!], jobs, draft: {} } }; setWL(u); sv({ wrapLogs: u }); };
                                         return (
                                             <div style={{ background: "#0f172a", borderRadius: 8, border: "1px dashed #334155", padding: 12, marginTop: 4 }}>
                                                 <div style={{ fontSize: 9, color: "#64748b", fontFamily: M, letterSpacing: 1, marginBottom: 8 }}>ADD WRAP JOB</div>
