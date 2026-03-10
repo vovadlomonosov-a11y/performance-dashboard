@@ -26,7 +26,7 @@ function ghlHeaders() {
   };
 }
 
-async function findOrCreateContact(phone: string, name: string, headers: Record<string, string>, locationId: string): Promise<string> {
+async function findContact(phone: string, name: string, headers: Record<string, string>, locationId: string): Promise<string | null> {
   // Try 1: search conversations for existing contact
   console.log(`[notify] searching conversation for ${phone}`);
   const searchRes = await fetch(
@@ -57,36 +57,18 @@ async function findOrCreateContact(phone: string, name: string, headers: Record<
     }
   }
 
-  // Try 3: create the contact
-  console.log(`[notify] contact not found, creating contact for ${name} (${phone})`);
-  const createRes = await fetch(`${GHL_BASE}/contacts/`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      locationId,
-      phone,
-      name,
-      source: "Performance Dashboard",
-    }),
-  });
-  if (!createRes.ok) {
-    const err = await createRes.text();
-    throw new Error(`GHL create contact failed (${createRes.status}): ${err}`);
-  }
-  const created = await createRes.json();
-  const contactId = created.contact?.id;
-  if (!contactId) {
-    throw new Error(`GHL create contact returned no ID for ${phone}`);
-  }
-  console.log(`[notify] created contactId=${contactId} for ${name}`);
-  return contactId;
+  console.warn(`[notify] ${name} (${phone}) not found in GHL — add them as a contact in GoHighLevel`);
+  return null;
 }
 
 async function sendSms(phone: string, name: string, message: string): Promise<void> {
   const headers = ghlHeaders();
   const locationId = process.env.GHL_LOCATION_ID!.trim();
 
-  const contactId = await findOrCreateContact(phone, name, headers, locationId);
+  const contactId = await findContact(phone, name, headers, locationId);
+  if (!contactId) {
+    throw new Error(`${name} (${phone}) is not a contact in GoHighLevel — please add them in GHL first`);
+  }
   console.log(`[notify] using contactId=${contactId} for ${name}`);
 
   // Step 2: send SMS via conversations/messages
