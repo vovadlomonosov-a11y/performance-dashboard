@@ -61,7 +61,7 @@ async function findContact(phone: string, name: string, headers: Record<string, 
   return null;
 }
 
-async function sendSms(phone: string, name: string, message: string): Promise<void> {
+async function sendSms(phone: string, name: string, message: string): Promise<any> {
   const headers = ghlHeaders();
   const locationId = process.env.GHL_LOCATION_ID!.trim();
 
@@ -80,11 +80,12 @@ async function sendSms(phone: string, name: string, message: string): Promise<vo
     headers,
     body: JSON.stringify(body),
   });
+  const resData = await res.json().catch(() => null);
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GHL SMS failed (${res.status}): ${text}`);
+    throw new Error(`GHL SMS failed (${res.status}): ${JSON.stringify(resData)}`);
   }
-  console.log(`[notify] SMS sent OK to ${name} (${phone})`);
+  console.log(`[notify] SMS sent OK to ${name} (${phone}), response:`, JSON.stringify(resData));
+  return resData;
 }
 
 export async function POST(req: Request) {
@@ -111,11 +112,12 @@ export async function POST(req: Request) {
         console.warn(`[notify] no phone configured for memberId=${memberId}`);
         return NextResponse.json({ ok: true, skipped: "no_phone_for_member" });
       }
-      await sendSms(
+      const smsResult = await sendSms(
         phone,
         name,
         `Hi ${name} - you have a new task assigned for ${day}:\n\n"${task}"\n\nLog into the dashboard to complete it.`
       );
+      return NextResponse.json({ ok: true, smsResult });
 
     } else if (type === "daily_reminder") {
       const recipients = Object.entries(MEMBER_PHONES).filter(([, p]) => !!p) as [string, string][];
