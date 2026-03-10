@@ -105,6 +105,54 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (type === "diagnose") {
+      const headers = ghlHeaders();
+      const locationId = process.env.GHL_LOCATION_ID!.trim();
+      const fromNumber = process.env.GHL_FROM_NUMBER?.trim() || "(not set)";
+      const phones: Record<string, string> = {};
+      for (const [id, ph] of Object.entries(MEMBER_PHONES)) {
+        phones[id] = ph || "(not set)";
+      }
+      // Check a recent conversation message status
+      const results: any = { locationId, fromNumber, phones, conversations: {} };
+      for (const [id, ph] of Object.entries(MEMBER_PHONES)) {
+        if (!ph) { results.conversations[id] = "no phone"; continue; }
+        try {
+          const sRes = await fetch(
+            `${GHL_BASE}/conversations/search?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(ph)}&limit=1`,
+            { headers }
+          );
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            const conv = sData.conversations?.[0];
+            if (conv) {
+              // Get last message from this conversation
+              const mRes = await fetch(
+                `${GHL_BASE}/conversations/${conv.id}/messages?limit=3`,
+                { headers }
+              );
+              const mData = mRes.ok ? await mRes.json() : null;
+              const lastMsgs = mData?.messages?.lastMessageBody ? [mData.messages.lastMessageBody] :
+                (mData?.messages || []).slice(0, 3).map((m: any) => ({
+                  body: m.body?.substring(0, 80),
+                  status: m.status,
+                  direction: m.direction,
+                  date: m.dateAdded,
+                }));
+              results.conversations[id] = { contactId: conv.contactId, lastMessages: lastMsgs };
+            } else {
+              results.conversations[id] = "no conversation found";
+            }
+          } else {
+            results.conversations[id] = `search failed (${sRes.status})`;
+          }
+        } catch (e: any) {
+          results.conversations[id] = `error: ${e.message}`;
+        }
+      }
+      return NextResponse.json({ ok: true, diagnostics: results });
+    }
+
     if (type === "task_assigned") {
       const phone = MEMBER_PHONES[memberId];
       const name = TEAM_NAMES[memberId] || memberId;
