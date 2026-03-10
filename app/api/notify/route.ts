@@ -132,14 +132,16 @@ export async function POST(req: Request) {
                 { headers }
               );
               const mData = mRes.ok ? await mRes.json() : null;
-              const lastMsgs = mData?.messages?.lastMessageBody ? [mData.messages.lastMessageBody] :
-                (mData?.messages || []).slice(0, 3).map((m: any) => ({
-                  body: m.body?.substring(0, 80),
-                  status: m.status,
-                  direction: m.direction,
-                  date: m.dateAdded,
-                }));
-              results.conversations[id] = { contactId: conv.contactId, lastMessages: lastMsgs };
+              const rawMsgs = Array.isArray(mData?.messages) ? mData.messages :
+                (mData?.messages?.messages ? mData.messages.messages : []);
+              const lastMsgs = rawMsgs.slice(0, 3).map((m: any) => ({
+                body: (m.body || "").substring(0, 80),
+                status: m.status,
+                direction: m.direction,
+                type: m.type,
+                date: m.dateAdded,
+              }));
+              results.conversations[id] = { contactId: conv.contactId, convId: conv.id, lastMessages: lastMsgs, rawShape: mData ? Object.keys(mData) : null };
             } else {
               results.conversations[id] = "no conversation found";
             }
