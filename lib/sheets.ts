@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { JWT, OAuth2Client } from "google-auth-library";
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID!.trim();
+const SPREADSHEET_ID = (process.env.SPREADSHEET_ID || "").trim();
 
 function getAuth(): JWT | OAuth2Client {
   // Option A: Service account (recommended for production)
