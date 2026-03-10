@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const TEAM_NAMES: Record<string, string> = {
   scott: "Scott",
   emily: "Emily",
-  anthony: "Anthony",
+  anthony: "Sergio",
   nick: "Nick",
   inna: "Inna",
 };
@@ -26,29 +26,71 @@ function ghlHeaders() {
   };
 }
 
-async function sendSms(phone: string, name: string, message: string): Promise<void> {
-  const headers = ghlHeaders();
-  const locationId = process.env.GHL_LOCATION_ID!.trim();
-
-  // Step 1: search conversations to get contactId (no Contacts API scope needed)
+async function findOrCreateContact(phone: string, name: string, headers: Record<string, string>, locationId: string): Promise<string> {
+  // Try 1: search conversations for existing contact
   console.log(`[notify] searching conversation for ${phone}`);
   const searchRes = await fetch(
     `${GHL_BASE}/conversations/search?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(phone)}&limit=1`,
     { headers }
   );
-  if (!searchRes.ok) {
-    const err = await searchRes.text();
-    throw new Error(`GHL conversation search failed (${searchRes.status}): ${err}`);
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    const conversation = searchData.conversations?.[0];
+    if (conversation?.contactId) {
+      console.log(`[notify] found contactId=${conversation.contactId} via conversation search`);
+      return conversation.contactId;
+    }
   }
-  const searchData = await searchRes.json();
-  const conversation = searchData.conversations?.[0];
-  if (!conversation?.contactId) {
-    throw new Error(`No GHL conversation found for ${phone} — contact not in GHL`);
+
+  // Try 2: search contacts directly
+  console.log(`[notify] no conversation found, searching contacts for ${phone}`);
+  const contactSearchRes = await fetch(
+    `${GHL_BASE}/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&number=${encodeURIComponent(phone)}`,
+    { headers }
+  );
+  if (contactSearchRes.ok) {
+    const contactData = await contactSearchRes.json();
+    const contact = contactData.contact;
+    if (contact?.id) {
+      console.log(`[notify] found contactId=${contact.id} via contact search`);
+      return contact.id;
+    }
   }
-  console.log(`[notify] found contactId=${conversation.contactId} for ${name}`);
+
+  // Try 3: create the contact
+  console.log(`[notify] contact not found, creating contact for ${name} (${phone})`);
+  const createRes = await fetch(`${GHL_BASE}/contacts/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      locationId,
+      phone,
+      name,
+      source: "Performance Dashboard",
+    }),
+  });
+  if (!createRes.ok) {
+    const err = await createRes.text();
+    throw new Error(`GHL create contact failed (${createRes.status}): ${err}`);
+  }
+  const created = await createRes.json();
+  const contactId = created.contact?.id;
+  if (!contactId) {
+    throw new Error(`GHL create contact returned no ID for ${phone}`);
+  }
+  console.log(`[notify] created contactId=${contactId} for ${name}`);
+  return contactId;
+}
+
+async function sendSms(phone: string, name: string, message: string): Promise<void> {
+  const headers = ghlHeaders();
+  const locationId = process.env.GHL_LOCATION_ID!.trim();
+
+  const contactId = await findOrCreateContact(phone, name, headers, locationId);
+  console.log(`[notify] using contactId=${contactId} for ${name}`);
 
   // Step 2: send SMS via conversations/messages
-  const body: Record<string, string> = { type: "SMS", contactId: conversation.contactId, message };
+  const body: Record<string, string> = { type: "SMS", contactId, message };
   if (process.env.GHL_FROM_NUMBER) body.fromNumber = process.env.GHL_FROM_NUMBER.trim();
 
   const res = await fetch(`${GHL_BASE}/conversations/messages`, {

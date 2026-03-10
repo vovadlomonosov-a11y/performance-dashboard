@@ -81,7 +81,7 @@ const TEAM = [
         ],
     },
     {
-        id: "anthony", name: "Anthony", role: "Window Tinter", emoji: "🔧", color: "#f59e0b",
+        id: "anthony", name: "Sergio", role: "Window Tinter", emoji: "🔧", color: "#f59e0b",
         hasTintLog: true,
         sections: [
             {
@@ -939,7 +939,7 @@ export default function Dashboard() {
                                 </div>);
                         })}
 
-                        {/* TINT LOG (Anthony & Inna) */}
+                        {/* TINT LOG (Sergio & Inna) */}
                         {am.hasTintLog && (
                             <div style={{ background: "#0f172a", borderRadius: 11, border: `1px solid ${am.color}33`, marginBottom: 8, overflow: "hidden" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", borderBottom: "1px solid #1e293b", background: `${am.color}08` }}><span style={{ fontSize: 14 }}>🚘</span><span style={{ fontSize: 12, fontWeight: 700 }}>Cars Tinted Today</span><span style={{ fontSize: 9, color: am.color, fontFamily: M, fontWeight: 700, marginLeft: "auto", padding: "2px 8px", background: `${am.color}18`, borderRadius: 4 }}>{gTJ(am.id, sD).length} TODAY • {gWTC(am.id)} WEEK</span></div>
@@ -1168,7 +1168,7 @@ export default function Dashboard() {
                                                                         const sl = histData.salesLogs[hKey];
                                                                         if (sl.jobsClosed || sl.revenue) entries.push({ icon: "💰", title: "Sales", content: `Jobs: ${sl.jobsClosed || 0} · Revenue: $${sl.revenue || 0}${sl.upsells ? ` · Upsells: ${sl.upsells} ($${sl.upsellRevenue || 0})` : ""}` });
                                                                     }
-                                                                    // Tint log (Anthony/Inna)
+                                                                    // Tint log (Sergio/Inna)
                                                                     if (am.hasTintLog && histData.tintLogs?.[hKey]?.jobs?.length > 0) {
                                                                         const jobs = histData.tintLogs[hKey].jobs;
                                                                         entries.push({ icon: "🔧", title: `Tint Jobs (${jobs.length})`, content: jobs.map((j: any) => `${j.vehicle}${j.services ? ` — ${j.services}` : ""}${j.reduction ? ` (${j.reduction})` : ""}`).join("\n") });
